@@ -54,9 +54,9 @@ fn main() -> Result<()> {
             let mut failed = 0;
             for job in &config.jobs {
                 match job.snapshots(&config) {
-                    Ok(v) => println!("Check for Job '{}' ok, found {} snapshots",job.name,v.len()),
+                    Ok(v) => println!("Check for Job '{:?}' ok, found {} snapshots",job.name,v.len()),
                     Err(e) => {
-                        eprintln!("Check for Job '{}' failed: {}",job.name,e);
+                        eprintln!("Check for Job '{}' failed: {:?}",job.name,e);
                         failed += 1;
                     },
                 }
