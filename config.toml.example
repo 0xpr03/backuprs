@@ -1,5 +1,6 @@
 # Rename this to config.toml
 
+[global]
 # Pubkey of restic server
 restic_key = "<CHANGE ME>"
 # Path to restic binary
@@ -7,14 +8,14 @@ restic_binary = "C:/restic_0.15.1_windows_amd64/restic_0.15.1_windows_amd64.exe"
 # Default intervall for jobs in seconds
 default_interval = 86400
 
-# Restic-Server as backend
-[Rest]
-# URL for restic server to use for all jobs
-restic_url = "example.com:443"
+# Rest-Server as backend
+[global.Rest]
+# URL for rest server to use for all jobs
+rest_url = "example.com:443"
 server_pubkey_file = "C:/Users/Foo/pub_key"
 
 # All backup jobs, start each one with [[jobs]]
-[[jobs]]
+[[job]]
 # For referencing jobs in commands and output
 name = "My Backup Job"
 # Command to run pre backup

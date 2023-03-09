@@ -52,9 +52,18 @@ fn main() -> Result<()> {
     let (defaults, mut jobs) = config.split();
     match &cli.command {
         Commands::Run { job } => {
-            for (name,job) in jobs {
-                // job.
-            }
+            if let Some(jobname) = job {
+                if let Some(job) = jobs.get_mut(jobname) {
+                    job.backup()?;
+                } else {
+                    bail!("No job name '{}' found!",jobname);
+                }
+
+            } else {
+                for (_name,job) in jobs.iter_mut() {
+                    job.backup()?;
+                }
+            }            
         }
         Commands::Test {} => {
             let mut failed = 0;

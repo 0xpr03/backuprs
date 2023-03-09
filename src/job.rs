@@ -33,7 +33,7 @@ impl Job {
     pub fn name(&self) -> &str {
         &self.data.name
     }
-    pub fn backup(&mut self, cfg: &Global) -> Result<()> {
+    pub fn backup(&mut self) -> Result<()> {
         if !self.is_initialized {
             if self.snapshots() == Err(CommandError::NotInitialized) {
                 self.restic_init()?;
@@ -50,7 +50,7 @@ impl Job {
         let output = cmd.output().into_diagnostic()?;
         self.check_errors(&output)?;
         println!("{}",String::from_utf8(output.stdout).unwrap());
-        
+
         Ok(())
     }
 
