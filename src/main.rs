@@ -1,20 +1,18 @@
 use std::{
     fs::File,
     io::{BufReader, Read},
-    path::{Path, PathBuf},
-    process::Command,
-    time::Duration,
+    process::Command, collections::HashMap,
 };
 
 use clap::{Parser, Subcommand};
-use config::Global;
+use config::{Global, Conf};
 use miette::{bail, Context, IntoDiagnostic, Result};
-use serde::Deserialize;
-use serde_with::serde_as;
-use serde_with::DurationSeconds;
+
+use crate::error::CommandError;
 
 mod config;
 mod job;
+mod error;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -32,6 +30,10 @@ enum Commands {
         #[arg(short, long)]
         job: Option<String>,
     },
+    Debug {
+        #[arg(short, long)]
+        job: String,
+    }
 }
 
 // /// Turn debugging information on
@@ -44,41 +46,56 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let config = read_config().wrap_err("Reading configuration")?;
+    let mut config = read_config().wrap_err("Reading configuration")?;
+    config.global.check()?;
+    check_restic(&config.global)?;
+    let (defaults, mut jobs) = config.split();
     match &cli.command {
         Commands::Run { job } => {
-            unimplemented!()
+            for (name,job) in jobs {
+                // job.
+            }
         }
         Commands::Test {} => {
-            check_restic(&config)?;
             let mut failed = 0;
-            for job in &config.jobs {
-                match job.snapshots(&config) {
-                    Ok(v) => println!("Check for Job '{:?}' ok, found {} snapshots",job.name,v.len()),
+            for (_,job) in jobs.iter_mut() {
+                match job.snapshots() {
+                    Ok(v) => println!(
+                        "Check for Job '{:?}' ok, found {} snapshots",
+                        job.name(),
+                        v.len()
+                    ),
                     Err(e) => {
-                        eprintln!("Check for Job '{}' failed: {:?}",job.name,e);
+                        if e == CommandError::NotInitialized {
+                            println!("Job '{}': Repo not initialized?",job.name());
+                        } else {
+                            eprintln!("Check for Job '{}' failed: {}", job.name(), e);
+                        }
                         failed += 1;
-                    },
+                    }
                 }
             }
             if failed > 0 {
-                eprintln!("Failed test for {} jobs",failed);
+                eprintln!("Failed test for {} jobs", failed);
             } else {
                 println!("Test successfull");
             }
         }
+        Commands::Debug { job } => {
+
+        },
     }
 
     Ok(())
 }
 
-fn read_config() -> Result<Global> {
+fn read_config() -> Result<Conf> {
     let file = File::open("config.toml").into_diagnostic()?;
     let mut reader = BufReader::new(file);
     let mut cfg = String::new();
     reader.read_to_string(&mut cfg).into_diagnostic()?;
 
-    let config: Global = toml::from_str(&cfg).into_diagnostic()?;
+    let config: Conf = toml::from_str(&cfg).into_diagnostic()?;
     Ok(config)
 }
 

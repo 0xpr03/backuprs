@@ -1,74 +1,117 @@
-use std::{process::Command, path::PathBuf, time::Duration};
-
+use std::collections::HashMap;
+use std::process::Output;
+use std::rc::Rc;
+use std::{path::PathBuf, process::Command, time::Duration};
 use miette::{bail, Context, IntoDiagnostic, Result};
 use serde::Deserialize;
 use serde_with::serde_as;
 use serde_with::DurationSeconds;
 
-use crate::config;
+use crate::config::{self, JobData};
 use crate::config::Global;
+use crate::error::{ComRes, CommandError};
 
+pub type JobMap = HashMap<String,Job>;
 
-#[serde_as]
-#[derive(Debug, Deserialize)]
 pub struct Job {
-    /// For referencing jobs in commands and output
-    pub name: String,
-    /// Command to run pre backup
-    pub pre_command: Option<String>,
-    /// Paths to include for backup
-    pub paths: Vec<PathBuf>,
-    /// Exclude items see [restic docs](https://restic.readthedocs.io/en/latest/040_backup.html#excluding-files)
-    pub excludes: Vec<String>,
-    /// Repository/Bucket
-    pub repository: String,
-    /// Login user
-    pub user: String,
-    /// Password for user
-    pub password: String,
-    /// Encryption key
-    pub repository_key: String,
-    /// Command to run post backup
-    pub post_command: Option<String>,
-    /// Whether to run the post_command even on backup failure
-    pub post_command_on_failure: bool,
-    /// Interval in which to perform the backup
-    #[serde_as(as = "Option<DurationSeconds<u64>>")]
-    pub interval: Option<Duration>,
+    data: JobData,
+    globals: Rc<Global>,
+    /// whether this repo got intialized
+    /// 
+    /// false means the state is unknown
+    is_initialized: bool,
 }
 
 impl Job {
-    pub fn snapshots(&self, cfg: &Global) -> Result<Snapshots> {
-        let mut cmd = self.command_base(cfg,"snapshots")?;
+    pub fn new(data: JobData, global: Rc<Global>) -> Self {
+        Self {
+            data,
+            globals: global,
+            is_initialized: false,
+        }
+    }
+    pub fn name(&self) -> &str {
+        &self.data.name
+    }
+    pub fn backup(&mut self, cfg: &Global) -> Result<()> {
+        if !self.is_initialized {
+            if self.snapshots() == Err(CommandError::NotInitialized) {
+                self.restic_init()?;
+            }
+        }
+
+        let mut cmd = self.command_base("backup")?;
+
+        for exclude in self.data.excludes.iter() {
+            cmd.args(["-e",exclude.as_str()]);
+        }
+        // has to be last
+        cmd.args(&self.data.paths);
         let output = cmd.output().into_diagnostic()?;
-        if output.stdout.starts_with(b"Fatal") ||!output.status.success() {
+        self.check_errors(&output)?;
+        println!("{}",String::from_utf8(output.stdout).unwrap());
+        
+        Ok(())
+    }
+
+    pub fn restic_init(&mut self) -> Result<()> {
+        let mut cmd = self.command_base("init")?;
+        let output = cmd.output().into_diagnostic()?;
+        self.check_errors(&output)?;
+        println!("{}",String::from_utf8(output.stdout).unwrap());
+        // let res: Snapshots = serde_json::from_slice(&output.stdout).into_diagnostic()?;
+        self.is_initialized = true;
+        Ok(())
+    }
+
+    fn check_errors(&self, output: &Output) -> ComRes<()> {
+        if output.stdout.starts_with(b"Fatal") || !output.status.success() {
             if !output.stdout.is_empty() {
-                eprintln!("RESTIC [{}]: {}",self.name,String::from_utf8_lossy(&output.stdout).trim());
+                eprintln!(
+                    "RESTIC [{}]: {}",
+                    self.data.name,
+                    String::from_utf8_lossy(&output.stdout).trim()
+                );
             }
             if !output.stderr.is_empty() {
-                eprintln!("RESTIC [{}]: {}",self.name,String::from_utf8_lossy(&output.stderr).trim());
+                let output = String::from_utf8_lossy(&output.stderr);
+                let output = output.trim();
+                if output.contains("Fatal: unable to open config file") {
+                    return Err(CommandError::NotInitialized);
+                }
+                eprintln!(
+                    "RESTIC [{}]: {}",
+                    self.data.name,output
+                );
             }
-            bail!("Restic exited with errors, status code {:?}",output.status.code());
+            return Err(CommandError::ResticError(format!("status code {:?}",output.status.code())));
         }
-        let res: Snapshots = serde_json::from_slice(&output.stdout)
-            .into_diagnostic()?;
+        Ok(())
+    }
+
+    pub fn snapshots(&mut self) -> ComRes<Snapshots> {
+        let mut cmd = self.command_base("snapshots")?;
+        let output = cmd.output()?;
+        self.check_errors(&output)?;
+        let res: Snapshots = serde_json::from_slice(&output.stdout)?;
+        self.is_initialized = true;
         Ok(res)
     }
 
-    fn command_base(&self, cfg: &Global, command: &'static str) -> Result<Command> {
-        let mut outp = Command::new(&cfg.restic_binary);
-        outp.arg(command)
-            .arg("--json")
-            .arg("-q");
-        match &cfg.backend {
-            config::RepositoryData::Restic { restic_url: _, server_pubkey_file } => {
-                outp.env("RESTIC_PASSWORD", self.repository_key.as_str())
-                .env("RESTIC_REPOSITORY", cfg.repo_url(self)?);
+    fn command_base(&self, command: &'static str) -> ComRes<Command> {
+        let mut outp = Command::new(&self.globals.restic_binary);
+        outp.args([command,"--json","-q"]);
+        match &self.globals.backend {
+            config::RepositoryData::Rest {
+                rest_url: _,
+                server_pubkey_file,
+            } => {
+                outp.env("RESTIC_PASSWORD", self.data.repository_key.as_str())
+                    .env("RESTIC_REPOSITORY", self.globals.repo_url(&self.data));
                 if let Some(key_file) = server_pubkey_file {
-                    outp.arg("--cacert")
-                    .arg(key_file);
+                    outp.arg("--cacert").arg(key_file);
                 }
-            },
+            }
         }
         Ok(outp)
     }
@@ -76,7 +119,7 @@ impl Job {
 
 pub type Snapshots = Vec<Snapshot>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct Snapshot {
     pub time: String,
     pub paths: Vec<String>,

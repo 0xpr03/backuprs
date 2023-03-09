@@ -8,7 +8,7 @@ restic_binary = "C:/restic_0.15.1_windows_amd64/restic_0.15.1_windows_amd64.exe"
 default_interval = 86400
 
 # Restic-Server as backend
-[Restic]
+[Rest]
 # URL for restic server to use for all jobs
 restic_url = "example.com:443"
 server_pubkey_file = "C:/Users/Foo/pub_key"
