@@ -54,14 +54,30 @@ fn main() -> Result<()> {
         Commands::Run { job } => {
             if let Some(jobname) = job {
                 if let Some(job) = jobs.get_mut(jobname) {
-                    job.backup()?;
+                    match job.backup() {
+                        Ok(_) => println!("Job '{}' backup successfull.",job.name()),
+                        Err(e) => {
+                            eprintln!("Job '{}': Failed to backup.",job.name());
+                            return Err(e);
+                        }
+                    }
                 } else {
                     bail!("No job name '{}' found!",jobname);
                 }
 
             } else {
+                let mut run = 0;
+                let mut failed = 0;
                 for (_name,job) in jobs.iter_mut() {
-                    job.backup()?;
+                    match job.backup() {
+                        Ok(_) => println!("Job '{}' backup successfull.",job.name()),
+                        Err(e) => {
+                            failed += 1;
+                            eprintln!("Job '{}': Failed to backup. {}",job.name(),e);
+                        },
+                    }
+                    run += 1;
+                    println!("Backup run. {} of {} jobs failed.",failed,run);
                 }
             }            
         }
