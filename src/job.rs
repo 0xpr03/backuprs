@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::{path::PathBuf, process::Command, time::Duration};
 use miette::{bail, Context, IntoDiagnostic, Result};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_with::serde_as;
 use serde_with::DurationSeconds;
 
@@ -34,9 +35,11 @@ impl Job {
     pub fn name(&self) -> &str {
         &self.data.name
     }
-    pub fn backup(&mut self) -> Result<()> {
+    /// Performs backup. Prints start and end.
+    pub fn backup(&mut self) -> Result<BackupSummary> {
+        println!("[{}]\tStarting backup",self.name());
         if !self.is_initialized {
-            if self.snapshots() == Err(CommandError::NotInitialized) {
+            if self.snapshots(Some(1)) == Err(CommandError::NotInitialized) {
                 if self.globals.verbose {
                     println!("[{}] not initialized",self.name());
                 }
@@ -53,9 +56,25 @@ impl Job {
         cmd.args(&self.data.paths);
         let output = cmd.output().into_diagnostic()?;
         self.check_errors(&output)?;
-        
+        let summary: BackupSummary = self.des_response(&output)?;
+        println!("[{}]\tBackup finished in {}s, {} changed files, {} new files, {} bytes added",self.name(),
+            summary.total_duration,summary.files_changed, summary.files_new,summary.data_added);
+        if self.verbose() {
+            println!("[{}]\t Backup Details: {:?}",self.name(),summary);
+        }
+        Ok(summary)
+    }
 
-        Ok(())
+    /// Deserialize restic response or print all output on error
+    fn des_response<T: DeserializeOwned>(&self, output: &Output) -> ComRes<T> {
+        let res: T = match serde_json::from_slice(&output.stdout) {
+            Ok(v) => v,
+            Err(e) => {
+                self.print_output_verbose(output);
+                return Err(e.into());
+            }
+        }; 
+        Ok(res)
     }
 
     #[inline]
@@ -65,7 +84,7 @@ impl Job {
 
     pub fn restic_init(&mut self) -> Result<()> {
         if self.verbose() {
-            println!("[{}] initializing repository",self.name());
+            println!("[{}] \t initializing repository",self.name());
         }
         let mut cmd = self.command_base("init")?;
         let output = cmd.output().into_diagnostic()?;
@@ -102,7 +121,7 @@ impl Job {
             let r_output = String::from_utf8_lossy(&output.stdout);
             for line in r_output.trim().lines() {
                 eprintln!(
-                    "[{}] RESTIC > {}",
+                    "[{}]\tRESTIC: {}",
                     self.data.name,
                     line
                 );
@@ -112,20 +131,30 @@ impl Job {
             let r_output = String::from_utf8_lossy(&output.stderr);
             for line in r_output.trim().lines() {
                 eprintln!(
-                    "[{}] RESTIC > {}",
+                    "[{}]\tRESTIC: {}",
                     self.data.name,line
                 );
             }
         }
     }
 
-    pub fn snapshots(&mut self) -> ComRes<Snapshots> {
+    /// Retrive snapshots for repo
+    /// 
+    /// If checking for repository status, specify an amount
+    pub fn snapshots(&mut self, amount: Option<usize>) -> ComRes<Snapshots> {
         let mut cmd = self.command_base("snapshots")?;
+        if let Some(amount) = amount {
+            cmd.args(["--latest", &amount.to_string()]);
+        }
+        
         let output = cmd.output()?;
         self.check_errors(&output)?;
-        let res: Snapshots = serde_json::from_slice(&output.stdout)?;
+        let snapshots: Snapshots = self.des_response(&output)?;
+        if self.verbose() {
+            println!("[{}]\t Snapshots: {:?}",self.name(),snapshots);
+        }
         self.is_initialized = true;
-        Ok(res)
+        Ok(snapshots)
     }
 
     fn command_base(&self, command: &'static str) -> ComRes<Command> {
@@ -156,4 +185,23 @@ pub struct Snapshot {
     pub hostname: String,
     pub username: String,
     pub id: String,
+}
+
+/// Returned from restic after a successfull backup
+#[derive(Debug, Deserialize)]
+pub struct BackupSummary {
+    // pub message_type":"summary
+    pub files_new: usize,
+    pub files_changed: usize,
+    pub files_unmodified: usize,
+    pub dirs_new: usize,
+    pub dirs_changed: usize,
+    pub dirs_unmodified: usize,
+    pub data_blobs: usize,
+    pub tree_blobs: usize,
+    pub data_added: usize,
+    pub total_files_processed: usize,
+    pub total_bytes_processed: usize,
+    pub total_duration: f32,
+    pub snapshot_id: String
 }

@@ -74,48 +74,46 @@ fn main() -> Result<()> {
             // one element
             if let Some(jobname) = job {
                 if let Some(job) = jobs.get_mut(jobname) {
-                    println!("Job '{}' starting backup",job.name());
                     match job.backup() {
-                        Ok(_) => println!("Job '{}' backup successfull.",job.name()),
+                        Ok(_) => (),
                         Err(e) => {
-                            eprintln!("Job '{}': Failed to backup.",job.name());
+                            eprintln!("[{}] Failed to backup.",job.name());
                             return Err(e);
                         }
                     }
                 } else {
-                    bail!("No job name '{}' found!",jobname);
+                    bail!("No job named '{}' found!",jobname);
                 }
             } else {
                 let mut run = 0;
                 let mut failed = 0;
                 for job in jobs.values_mut() {
-                    println!("Job '{}' starting backup",job.name());
                     match job.backup() {
-                        Ok(_) => println!("Job '{}' backup successfull.",job.name()),
+                        Ok(_) => (),
                         Err(e) => {
                             failed += 1;
-                            eprintln!("Job '{}': Failed to backup. {}",job.name(),e);
+                            eprintln!("[{}]\tFailed to backup. {}",job.name(),e);
                         },
                     }
                     run += 1;
                 }
-                println!("Backup run. {} of {} jobs failed.",failed,run);
+                println!("Backup run finished. {}/{} jobs failed.",failed, run);
             }            
         }
         Commands::Test {} => {
             let mut failed = 0;
             for (_,job) in jobs.iter_mut() {
-                match job.snapshots() {
+                match job.snapshots(Some(10)) {
                     Ok(v) => println!(
-                        "[{}] Job ok, found {} snapshots",
+                        "[{}]\tJob ok, found {} snapshots (max 10)",
                         job.name(),
                         v.len()
                     ),
                     Err(e) => {
                         if e == CommandError::NotInitialized {
-                            println!("[{}] Repo not initialized?",job.name());
+                            println!("[{}]\tRepo not initialized?",job.name());
                         } else {
-                            eprintln!("[{}] check failed: {}", job.name(), e);
+                            eprintln!("[{}]\tCheck failed: {}", job.name(), e);
                             failed += 1;
                         }
                     }
