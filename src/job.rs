@@ -30,12 +30,16 @@ impl Job {
             is_initialized: false,
         }
     }
+    #[inline]
     pub fn name(&self) -> &str {
         &self.data.name
     }
     pub fn backup(&mut self) -> Result<()> {
         if !self.is_initialized {
             if self.snapshots() == Err(CommandError::NotInitialized) {
+                if self.globals.verbose {
+                    println!("[{}] not initialized",self.name());
+                }
                 self.restic_init()?;
             }
         }
@@ -49,16 +53,24 @@ impl Job {
         cmd.args(&self.data.paths);
         let output = cmd.output().into_diagnostic()?;
         self.check_errors(&output)?;
-        println!("{}",String::from_utf8(output.stdout).unwrap());
+        
 
         Ok(())
     }
 
+    #[inline]
+    fn verbose(&self) -> bool {
+        self.globals.verbose
+    }
+
     pub fn restic_init(&mut self) -> Result<()> {
+        if self.verbose() {
+            println!("[{}] initializing repository",self.name());
+        }
         let mut cmd = self.command_base("init")?;
         let output = cmd.output().into_diagnostic()?;
         self.check_errors(&output)?;
-        println!("{}",String::from_utf8(output.stdout).unwrap());
+        // println!("{}",String::from_utf8(output.stdout).unwrap());
         // let res: Snapshots = serde_json::from_slice(&output.stdout).into_diagnostic()?;
         self.is_initialized = true;
         Ok(())
@@ -66,27 +78,45 @@ impl Job {
 
     fn check_errors(&self, output: &Output) -> ComRes<()> {
         if output.stdout.starts_with(b"Fatal") || !output.status.success() {
-            if !output.stdout.is_empty() {
-                eprintln!(
-                    "RESTIC [{}]: {}",
-                    self.data.name,
-                    String::from_utf8_lossy(&output.stdout).trim()
-                );
-            }
             if !output.stderr.is_empty() {
-                let output = String::from_utf8_lossy(&output.stderr);
-                let output = output.trim();
-                if output.contains("Fatal: unable to open config file") {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if stderr.contains("Fatal: unable to open config file")
+                    && stderr.contains("<config/> does not exist") {
+                    if self.verbose() { // still print on verbose
+                        self.print_output_verbose(output);
+                    }
                     return Err(CommandError::NotInitialized);
                 }
-                eprintln!(
-                    "RESTIC [{}]: {}",
-                    self.data.name,output
-                );
             }
+            self.print_output_verbose(output);
             return Err(CommandError::ResticError(format!("status code {:?}",output.status.code())));
         }
+        if self.verbose() {
+            self.print_output_verbose(output);
+        }
         Ok(())
+    }
+
+    fn print_output_verbose(&self, output: &Output) {
+        if !output.stdout.is_empty() {
+            let r_output = String::from_utf8_lossy(&output.stdout);
+            for line in r_output.trim().lines() {
+                eprintln!(
+                    "[{}] RESTIC > {}",
+                    self.data.name,
+                    line
+                );
+            }
+        }
+        if !output.stderr.is_empty() {
+            let r_output = String::from_utf8_lossy(&output.stderr);
+            for line in r_output.trim().lines() {
+                eprintln!(
+                    "[{}] RESTIC > {}",
+                    self.data.name,line
+                );
+            }
+        }
     }
 
     pub fn snapshots(&mut self) -> ComRes<Snapshots> {

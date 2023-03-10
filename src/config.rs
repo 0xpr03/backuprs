@@ -35,6 +35,9 @@ pub struct Global {
     pub backend: RepositoryData,
     /// Path to restic binary
     pub restic_binary: PathBuf,
+    /// Verbose output, passed via CLI params
+    #[serde(default)]
+    pub verbose: bool,
     /// Default interval to use for backup jobs
     #[serde_as(as = "DurationSeconds<u64>")]
     pub default_interval: Duration,

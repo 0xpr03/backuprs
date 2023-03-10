@@ -17,6 +17,9 @@ mod error;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    /// Verbose output
+    #[arg(short,long, default_value_t = false)]
+    verbose: bool,
     #[command(subcommand)]
     command: Commands,
 }
@@ -25,12 +28,20 @@ struct Cli {
 enum Commands {
     /// Test config
     Test {},
+    /// Run all backup jobs once
     Run {
         /// Run specific job by name
         #[arg(short, long)]
         job: Option<String>,
+        /// Abort on first error, stops any further jobs
+        #[arg(short, long, default_value_t = false)]
+        abort_on_error: bool,
+        /// Force backups for all jobs, do not respect specified job intervals
+        #[arg(short, long, default_value_t = false)]
+        force: bool,
     },
-    Debug {
+    /// Daemonize and run backups in specified intervals
+    Daemon {
         #[arg(short, long)]
         job: String,
     }
@@ -46,14 +57,24 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
     let mut config = read_config().wrap_err("Reading configuration")?;
+    if cli.verbose {
+        config.global.verbose = true;
+    }
+
     config.global.check()?;
     check_restic(&config.global)?;
+
     let (defaults, mut jobs) = config.split();
+
     match &cli.command {
-        Commands::Run { job } => {
+        Commands::Run { job, abort_on_error, force } => {
+            // maybe unify this here, but would require creating an ad-hoc iterator of
+            // one element
             if let Some(jobname) = job {
                 if let Some(job) = jobs.get_mut(jobname) {
+                    println!("Job '{}' starting backup",job.name());
                     match job.backup() {
                         Ok(_) => println!("Job '{}' backup successfull.",job.name()),
                         Err(e) => {
@@ -64,11 +85,11 @@ fn main() -> Result<()> {
                 } else {
                     bail!("No job name '{}' found!",jobname);
                 }
-
             } else {
                 let mut run = 0;
                 let mut failed = 0;
-                for (_name,job) in jobs.iter_mut() {
+                for job in jobs.values_mut() {
+                    println!("Job '{}' starting backup",job.name());
                     match job.backup() {
                         Ok(_) => println!("Job '{}' backup successfull.",job.name()),
                         Err(e) => {
@@ -77,8 +98,8 @@ fn main() -> Result<()> {
                         },
                     }
                     run += 1;
-                    println!("Backup run. {} of {} jobs failed.",failed,run);
                 }
+                println!("Backup run. {} of {} jobs failed.",failed,run);
             }            
         }
         Commands::Test {} => {
@@ -86,17 +107,17 @@ fn main() -> Result<()> {
             for (_,job) in jobs.iter_mut() {
                 match job.snapshots() {
                     Ok(v) => println!(
-                        "Check for Job '{:?}' ok, found {} snapshots",
+                        "[{}] Job ok, found {} snapshots",
                         job.name(),
                         v.len()
                     ),
                     Err(e) => {
                         if e == CommandError::NotInitialized {
-                            println!("Job '{}': Repo not initialized?",job.name());
+                            println!("[{}] Repo not initialized?",job.name());
                         } else {
-                            eprintln!("Check for Job '{}' failed: {}", job.name(), e);
+                            eprintln!("[{}] check failed: {}", job.name(), e);
+                            failed += 1;
                         }
-                        failed += 1;
                     }
                 }
             }
@@ -106,9 +127,7 @@ fn main() -> Result<()> {
                 println!("Test successfull");
             }
         }
-        Commands::Debug { job } => {
-
-        },
+        Commands::Daemon { job } => todo!(),
     }
 
     Ok(())
