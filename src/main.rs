@@ -132,6 +132,9 @@ fn main() -> Result<()> {
         }
         Commands::Daemon { } => {
             // update last_run for each job
+            if jobs.is_empty() {
+                bail!("No backup jobs configured!");
+            }
             let mut jobs: Vec<_> = jobs.into_values().map(|mut v|{v.snapshots(Some(1)); v}).collect();
 
             loop {
@@ -141,7 +144,9 @@ fn main() -> Result<()> {
                     let now = time::OffsetDateTime::now_local()
                     .into_diagnostic()?;
                     let sleep_time = job.next_run()? - now;
-                    std::thread::sleep(sleep_time.try_into().into_diagnostic()?);
+                    if sleep_time.is_positive() {
+                        std::thread::sleep(sleep_time.try_into().into_diagnostic()?);
+                    }
                     match job.backup() {
                         Ok(_) => print!("[{}]\tFinished backup.",job.name()),
                         Err(e) => {
