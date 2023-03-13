@@ -5,7 +5,7 @@
 restic_key = "<CHANGE ME>"
 # Path to restic binary
 restic_binary = "C:/restic_0.15.1_windows_amd64/restic_0.15.1_windows_amd64.exe"
-# Default intervall for jobs in seconds
+# Default intervall for jobs in minutes
 default_interval = 86400
 
 # Rest-Server as backend
@@ -37,3 +37,5 @@ repository = "<CHANGE ME>"
 # post_command = ""
 # Whether to run the post_command even on backup failure
 post_command_on_failure = false
+# custom interval for this job, in minutes
+# interval = 1440

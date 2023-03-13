@@ -1,11 +1,8 @@
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::time::Duration;
 
-use miette::{bail, Context, IntoDiagnostic, Result};
+use miette::{bail, Result};
 use serde::Deserialize;
-use serde_with::serde_as;
-use serde_with::DurationSeconds;
 
 use crate::job::Job;
 use crate::job::JobMap;
@@ -27,7 +24,6 @@ impl Conf {
 
 pub type Defaults = Rc<Global>;
 
-#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct Global {
     /// Repository backend and defaults
@@ -39,8 +35,9 @@ pub struct Global {
     #[serde(default)]
     pub verbose: bool,
     /// Default interval to use for backup jobs
-    #[serde_as(as = "DurationSeconds<u64>")]
-    pub default_interval: Duration,
+    pub default_interval: u64,
+    /// Backup time
+    pub backup_start_time: Option<time::Time>,
 }
 
 impl Global {
@@ -91,7 +88,6 @@ pub enum RepositoryData {
     },
 }
 
-#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct JobData {
     /// For referencing jobs in commands and output
@@ -115,6 +111,5 @@ pub struct JobData {
     /// Whether to run the post_command even on backup failure
     pub post_command_on_failure: bool,
     /// Interval in which to perform the backup
-    #[serde_as(as = "Option<DurationSeconds<u64>>")]
-    pub interval: Option<Duration>,
+    pub interval: Option<u64>,
 }

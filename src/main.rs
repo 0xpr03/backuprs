@@ -1,11 +1,12 @@
 use std::{
     fs::File,
     io::{BufReader, Read},
-    process::Command, collections::HashMap,
+    process::Command,
 };
 
 use clap::{Parser, Subcommand};
 use config::{Global, Conf};
+use job::Job;
 use miette::{bail, Context, IntoDiagnostic, Result};
 
 use crate::error::CommandError;
@@ -42,8 +43,6 @@ enum Commands {
     },
     /// Daemonize and run backups in specified intervals
     Daemon {
-        #[arg(short, long)]
-        job: String,
     }
 }
 
@@ -102,13 +101,19 @@ fn main() -> Result<()> {
         }
         Commands::Test {} => {
             let mut failed = 0;
+            // println!("Backup starting time is {}",defaults.backup_start_time);
             for (_,job) in jobs.iter_mut() {
                 match job.snapshots(Some(10)) {
-                    Ok(v) => println!(
-                        "[{}]\tJob ok, found {} snapshots (max 10)",
+                    Ok(v) => {
+                        let next_run = job.next_run()?;
+                        println!(
+                        "[{}]\tJob ok, found {} snapshots (max 10), last backup {}, next backup would be at {}",
                         job.name(),
-                        v.len()
-                    ),
+                        v.len(),
+                        job.last_run().expect("Expected at least one snapshot"),
+                        next_run,
+                    );
+                    },
                     Err(e) => {
                         if e == CommandError::NotInitialized {
                             println!("[{}]\tRepo not initialized?",job.name());
@@ -125,7 +130,30 @@ fn main() -> Result<()> {
                 println!("Test successfull");
             }
         }
-        Commands::Daemon { job } => todo!(),
+        Commands::Daemon { } => {
+            // update last_run for each job
+            let mut jobs: Vec<_> = jobs.into_values().map(|mut v|{v.snapshots(Some(1)); v}).collect();
+
+            loop {
+                jobs.sort_unstable_by(|a,b|a.next_run().unwrap().cmp(&b.next_run().unwrap()));
+                    
+                while let Some(mut job) = jobs.pop() {
+                    let now = time::OffsetDateTime::now_local()
+                    .into_diagnostic()?;
+                    let sleep_time = job.next_run()? - now;
+                    std::thread::sleep(sleep_time.try_into().into_diagnostic()?);
+                    match job.backup() {
+                        Ok(_) => print!("[{}]\tFinished backup.",job.name()),
+                        Err(e) => {
+                            eprintln!("[{}]\tFailed to backup.",job.name());
+                            return Err(e);
+                        }
+                    }
+
+                    jobs.push(job);
+                }
+            }
+        },
     }
 
     Ok(())

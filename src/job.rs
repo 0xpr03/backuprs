@@ -1,12 +1,12 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::process::Output;
 use std::rc::Rc;
-use std::{path::PathBuf, process::Command, time::Duration};
-use miette::{bail, Context, IntoDiagnostic, Result};
+use std::{process::Command};
+use miette::{miette, IntoDiagnostic, Result};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde_with::serde_as;
-use serde_with::DurationSeconds;
+use time::{OffsetDateTime, Duration};
 
 use crate::config::{self, JobData};
 use crate::config::Global;
@@ -17,10 +17,11 @@ pub type JobMap = HashMap<String,Job>;
 pub struct Job {
     data: JobData,
     globals: Rc<Global>,
-    /// whether this repo got intialized
+    /// Last snapshot run
     /// 
-    /// false means the state is unknown
-    is_initialized: bool,
+    /// also tells whether this repo got intialized
+    last_run: Cell<Option<OffsetDateTime>>,
+    next_run: Cell<Option<OffsetDateTime>>,
 }
 
 impl Job {
@@ -28,17 +29,51 @@ impl Job {
         Self {
             data,
             globals: global,
-            is_initialized: false,
+            last_run: Cell::new(None),
+            next_run: Cell::new(None),
         }
     }
+
+    /// Time of last backup run
+    pub fn last_run(&self) -> Option<OffsetDateTime> {
+        self.last_run.get()
+    }
+
+    fn interval(&self) -> u64 {
+        self.data.interval.unwrap_or(self.globals.default_interval)
+    }
+
+    /// Update last_run and invalidate next_run
+    fn last_run_update(&mut self, last_run: Option<OffsetDateTime>) {
+        self.last_run.set(last_run);
+        self.next_run.set(None);
+    }
+
+    /// Time of next expected backup run
+    pub fn next_run(&self) -> Result<OffsetDateTime> {   
+        if let Some(v) = self.next_run.get() {
+            return Ok(v);
+        }
+        match self.last_run() {
+            Some(last_run) => {
+                let v = last_run.checked_add(Duration::minutes(self.interval() as _)).expect("overflow calculating next backup time!");
+                self.next_run.set(Some(v));
+                Ok(v)
+            },
+            None => {
+                OffsetDateTime::now_local().into_diagnostic()
+            }
+        }
+    }
+
     #[inline]
     pub fn name(&self) -> &str {
         &self.data.name
     }
-    /// Performs backup. Prints start and end.
+    /// Run backup. Prints start and end. Does not check for correct duration to previous run.
     pub fn backup(&mut self) -> Result<BackupSummary> {
         println!("[{}]\tStarting backup",self.name());
-        if !self.is_initialized {
+        if self.last_run.get().is_none() {
             if self.snapshots(Some(1)) == Err(CommandError::NotInitialized) {
                 if self.globals.verbose {
                     println!("[{}] not initialized",self.name());
@@ -60,7 +95,7 @@ impl Job {
         println!("[{}]\tBackup finished in {}s, {} changed files, {} new files, {} bytes added",self.name(),
             summary.total_duration,summary.files_changed, summary.files_new,summary.data_added);
         if self.verbose() {
-            println!("[{}]\t Backup Details: {:?}",self.name(),summary);
+            println!("[{}]\tBackup Details: {:?}",self.name(),summary);
         }
         Ok(summary)
     }
@@ -82,6 +117,7 @@ impl Job {
         self.globals.verbose
     }
 
+    /// Initialize restic repository
     pub fn restic_init(&mut self) -> Result<()> {
         if self.verbose() {
             println!("[{}] \t initializing repository",self.name());
@@ -91,10 +127,11 @@ impl Job {
         self.check_errors(&output)?;
         // println!("{}",String::from_utf8(output.stdout).unwrap());
         // let res: Snapshots = serde_json::from_slice(&output.stdout).into_diagnostic()?;
-        self.is_initialized = true;
+        self.snapshots(Some(1))?;
         Ok(())
     }
 
+    /// Check restic respone for errors
     fn check_errors(&self, output: &Output) -> ComRes<()> {
         if output.stdout.starts_with(b"Fatal") || !output.status.success() {
             if !output.stderr.is_empty() {
@@ -116,6 +153,7 @@ impl Job {
         Ok(())
     }
 
+    /// Helper to print restic cmd output for verbose flag
     fn print_output_verbose(&self, output: &Output) {
         if !output.stdout.is_empty() {
             let r_output = String::from_utf8_lossy(&output.stdout);
@@ -141,6 +179,8 @@ impl Job {
     /// Retrive snapshots for repo
     /// 
     /// If checking for repository status, specify an amount
+    /// 
+    /// Also sets last_run / initialized flag based on outcome
     pub fn snapshots(&mut self, amount: Option<usize>) -> ComRes<Snapshots> {
         let mut cmd = self.command_base("snapshots")?;
         if let Some(amount) = amount {
@@ -153,10 +193,11 @@ impl Job {
         if self.verbose() {
             println!("[{}]\t Snapshots: {:?}",self.name(),snapshots);
         }
-        self.is_initialized = true;
+        self.last_run_update(snapshots.last().map(|v|v.time));
         Ok(snapshots)
     }
 
+    /// Restic command base
     fn command_base(&self, command: &'static str) -> ComRes<Command> {
         let mut outp = Command::new(&self.globals.restic_binary);
         outp.args([command,"--json","-q"]);
@@ -180,7 +221,8 @@ pub type Snapshots = Vec<Snapshot>;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Snapshot {
-    pub time: String,
+    #[serde(with = "time::serde::iso8601")]
+    pub time: OffsetDateTime,
     pub paths: Vec<String>,
     pub hostname: String,
     pub username: String,
