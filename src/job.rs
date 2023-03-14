@@ -66,29 +66,71 @@ impl Job {
         }
     }
 
+    /// Update last_run value by fetching latest snapshots.
+    /// 
+    /// Can emit CommandError::NotInitialized.
+    pub fn update_last_run(&mut self) -> ComRes<()> {
+        self.snapshots(Some(1)).map(|_|())
+    }
+
     #[inline]
     pub fn name(&self) -> &str {
         &self.data.name
     }
-    /// Run backup. Prints start and end. Does not check for correct duration to previous run.
-    pub fn backup(&mut self) -> Result<BackupSummary> {
-        println!("[{}]\tStarting backup",self.name());
+
+    /// Perform dry run with verbose information
+    pub fn dry_run(&mut self) -> Result<()> {
+        println!("[{}]\tStarting dry run",self.name());
+        self.assert_initialized()?;
+        let mut cmd = self.command_base("backup", false)?;
+        cmd.args(["--verbose","--dry-run"]);
+        self.backup_args(&mut cmd);
+        let output = cmd.output().into_diagnostic()?;
+        self.check_errors(&output)?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.trim().lines() {
+            if self.verbose() {
+                println!(
+                    "[{}]\tRESTIC: {}",
+                    self.data.name,line
+                );
+            }
+            let msg: BackupMessage = serde_json::from_str(line).into_diagnostic()?;
+            println!("{:?}",msg);
+        }
+        Ok(())
+    }
+
+    /// Make sure the repo is initialized
+    fn assert_initialized(&mut self) -> Result<()> {
         if self.last_run.get().is_none() {
-            if self.snapshots(Some(1)) == Err(CommandError::NotInitialized) {
+            if self.update_last_run() == Err(CommandError::NotInitialized) {
                 if self.globals.verbose {
                     println!("[{}] not initialized",self.name());
                 }
                 self.restic_init()?;
             }
         }
+        Ok(())
+    }
 
-        let mut cmd = self.command_base("backup")?;
-
+    /// Unifies backup include / exclude arguments over dry runs and backups
+    fn backup_args(&self, cmd: &mut Command) {
         for exclude in self.data.excludes.iter() {
             cmd.args(["-e",exclude.as_str()]);
         }
         // has to be last
         cmd.args(&self.data.paths);
+    }
+
+    /// Run backup. Prints start and end. Does not check for correct duration to previous run.
+    pub fn backup(&mut self) -> Result<BackupSummary> {
+        println!("[{}]\tStarting backup",self.name());
+        self.assert_initialized()?;
+
+        let mut cmd = self.command_base("backup",true)?;
+
+        self.backup_args(&mut cmd);
         let output = cmd.output().into_diagnostic()?;
         self.check_errors(&output)?;
         let summary: BackupSummary = self.des_response(&output)?;
@@ -122,7 +164,7 @@ impl Job {
         if self.verbose() {
             println!("[{}] \t initializing repository",self.name());
         }
-        let mut cmd = self.command_base("init")?;
+        let mut cmd = self.command_base("init",true)?;
         let output = cmd.output().into_diagnostic()?;
         self.check_errors(&output)?;
         // println!("{}",String::from_utf8(output.stdout).unwrap());
@@ -182,7 +224,7 @@ impl Job {
     /// 
     /// Also sets last_run / initialized flag based on outcome
     pub fn snapshots(&mut self, amount: Option<usize>) -> ComRes<Snapshots> {
-        let mut cmd = self.command_base("snapshots")?;
+        let mut cmd = self.command_base("snapshots",true)?;
         if let Some(amount) = amount {
             cmd.args(["--latest", &amount.to_string()]);
         }
@@ -198,9 +240,12 @@ impl Job {
     }
 
     /// Restic command base
-    fn command_base(&self, command: &'static str) -> ComRes<Command> {
+    fn command_base(&self, command: &'static str, quiet: bool) -> ComRes<Command> {
         let mut outp = Command::new(&self.globals.restic_binary);
-        outp.args([command,"--json","-q"]);
+        outp.args([command,"--json"]);
+        if quiet {
+            outp.arg("-q");
+        }
         match &self.globals.backend {
             config::RepositoryData::Rest {
                 rest_url: _,
@@ -227,6 +272,60 @@ pub struct Snapshot {
     pub hostname: String,
     pub username: String,
     pub id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "message_type")]
+pub enum BackupMessage {
+    #[serde(rename = "verbose_status")]
+    VerboseStatus(BackupVerboseStatus),
+    #[serde(rename = "status")]
+    Status(BackupStatus),
+    #[serde(rename = "summary")]
+    Summary(BackupSummary)
+}
+
+/// For some reason restic outputs 2 different kinds of normal status.
+/// One for intermediate steps, and one on finish.
+/// 
+/// The difference is that the finish status contains an action : scan_finished thingy
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum BackupStatus {
+    Finish(BackupStatusFinish),
+    Intermediate(BackupStatusIntermediate),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BackupStatusFinish {
+    pub action: String,
+    pub duration: f64,
+    pub data_size: usize,
+    pub data_size_in_repo: usize,
+    pub metadata_size: usize,
+    pub metadata_size_in_repo: usize,
+    pub total_files: usize
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BackupStatusIntermediate {
+    pub percent_done: f64,
+    pub total_files: usize,
+    pub files_done: usize,
+    pub total_bytes: usize,
+    pub bytes_done: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BackupVerboseStatus {
+    pub action: String,
+    pub item: String,
+    pub duration: isize,
+    pub data_size: usize,
+    pub data_size_in_repo: usize,
+    pub metadata_size: usize,
+    pub metadata_size_in_repo: usize,
+    pub total_files: usize,
 }
 
 /// Returned from restic after a successfull backup

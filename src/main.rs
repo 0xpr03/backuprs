@@ -28,8 +28,17 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Test config
-    Test {},
-    /// Run all backup jobs once
+    Test { 
+        /// Dry run, do not perform backup, only print what would happen.
+        /// 
+        /// Equals `restic backup --dry-run`
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        /// Test specific job by name
+        #[arg(short, long)]
+        job: Option<String>,
+     },
+    /// Force run all or one backup job
     Run {
         /// Run specific job by name
         #[arg(short, long)]
@@ -37,9 +46,6 @@ enum Commands {
         /// Abort on first error, stops any further jobs
         #[arg(short, long, default_value_t = false)]
         abort_on_error: bool,
-        /// Force backups for all jobs, do not respect specified job intervals
-        #[arg(short, long, default_value_t = false)]
-        force: bool,
     },
     /// Daemonize and run backups in specified intervals
     Daemon {
@@ -64,11 +70,11 @@ fn main() -> Result<()> {
 
     config.global.check()?;
     check_restic(&config.global)?;
-
+    // TODO: fail on duplicate job names
     let (defaults, mut jobs) = config.split();
 
     match &cli.command {
-        Commands::Run { job, abort_on_error, force } => {
+        Commands::Run { job, abort_on_error } => {
             // maybe unify this here, but would require creating an ad-hoc iterator of
             // one element
             if let Some(jobname) = job {
@@ -99,17 +105,33 @@ fn main() -> Result<()> {
                 println!("Backup run finished. {}/{} jobs failed.",failed, run);
             }            
         }
-        Commands::Test {} => {
+        Commands::Test { dry_run, job } => {
             let mut failed = 0;
+            if *dry_run {
+                match job {
+                    Some(target_name) => {
+                        println!("Dry run mode.");
+                        for (name, job) in jobs.iter_mut() {
+                            if name == target_name {
+                                job.dry_run()?;
+                                return Ok(());
+                            }
+                        }
+                        bail!("No job named '{}' found!",target_name);
+                    }
+                    None => {
+                        bail!("Dry run flag requires a job name!");
+                    }
+                }
+            }
             // println!("Backup starting time is {}",defaults.backup_start_time);
             for (_,job) in jobs.iter_mut() {
-                match job.snapshots(Some(10)) {
+                match job.update_last_run() {
                     Ok(v) => {
                         let next_run = job.next_run()?;
                         println!(
-                        "[{}]\tJob ok, found {} snapshots (max 10), last backup {}, next backup would be at {}",
+                        "[{}]\tJob ok, found snapshots, last backup {}, next backup would be at {}",
                         job.name(),
-                        v.len(),
                         job.last_run().expect("Expected at least one snapshot"),
                         next_run,
                     );
