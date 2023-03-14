@@ -96,7 +96,29 @@ impl Job {
                 );
             }
             let msg: BackupMessage = serde_json::from_str(line).into_diagnostic()?;
-            println!("{:?}",msg);
+            // println!("{:?}",msg);
+            match msg {
+                BackupMessage::VerboseStatus(v) => {
+                    match v.action.as_str() {
+                        "unchanged" => println!("[{}]\tUnchanged \"{}\"",self.name(),v.item),
+                        "new" => {
+                            let (unit,size) = format_size(v.data_size);
+                            println!("[{}]\tNew \"{}\" {} {}",self.name(),v.item,size,unit);
+                        },
+                        "changed" => {
+                            let (unit,size) = format_size(v.data_size);
+                            println!("[{}]\tNew \"{}\" {} {}",self.name(),v.item,size,unit);
+                        },
+                        v => eprintln!("Unknown restic action '{}'",v),
+                    }
+                },
+                BackupMessage::Status(_) => (),
+                BackupMessage::Summary(s) => {
+                    let (added_unit,added) = format_size(s.data_added);
+                    println!("[{}] Dry-run summary {added} {added_unit} added, {} new files, {} changed files, {} unchanged files",self.name(),
+                        s.files_new,s.files_changed,s.files_unmodified);
+                },
+            }
         }
         Ok(())
     }
@@ -262,6 +284,20 @@ impl Job {
     }
 }
 
+const fn format_size(bytes: usize) -> (&'static str,usize) {
+    if bytes > 2<<40 {
+        ("TiB", bytes / (2<<40) )
+    } else if bytes > 2<<30 {
+        ("GiB", bytes / (2<<30) )
+    } else if bytes > 2<<20 {
+        ("MiB",bytes / (2<<20) )
+    } else if bytes > 2<<10 {
+        ("KiB",bytes / (2<<10) )
+    } else {
+        ("B",bytes)
+    }
+}
+
 pub type Snapshots = Vec<Snapshot>;
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -310,9 +346,13 @@ pub struct BackupStatusFinish {
 #[derive(Debug, Deserialize)]
 pub struct BackupStatusIntermediate {
     pub percent_done: f64,
+    #[serde(default)]
     pub total_files: usize,
+    #[serde(default)]
     pub files_done: usize,
+    #[serde(default)]
     pub total_bytes: usize,
+    #[serde(default)]
     pub bytes_done: usize,
 }
 
@@ -320,7 +360,7 @@ pub struct BackupStatusIntermediate {
 pub struct BackupVerboseStatus {
     pub action: String,
     pub item: String,
-    pub duration: isize,
+    pub duration: f64,
     pub data_size: usize,
     pub data_size_in_repo: usize,
     pub metadata_size: usize,
