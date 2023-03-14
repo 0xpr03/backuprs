@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::process::Output;
 use std::rc::Rc;
 use std::{process::Command};
@@ -114,9 +115,7 @@ impl Job {
                 },
                 BackupMessage::Status(_) => (),
                 BackupMessage::Summary(s) => {
-                    let (added_unit,added) = format_size(s.data_added);
-                    println!("[{}] Dry-run summary {added} {added_unit} added, {} new files, {} changed files, {} unchanged files",self.name(),
-                        s.files_new,s.files_changed,s.files_unmodified);
+                    println!("[{}] Dry-run finished. {}",self.name(),s);
                 },
             }
         }
@@ -156,8 +155,7 @@ impl Job {
         let output = cmd.output().into_diagnostic()?;
         self.check_errors(&output)?;
         let summary: BackupSummary = self.des_response(&output)?;
-        println!("[{}]\tBackup finished in {}s, {} changed files, {} new files, {} bytes added",self.name(),
-            summary.total_duration,summary.files_changed, summary.files_new,summary.data_added);
+        print!("[{}]\tBackup finished. {}",self.name(),summary);
         if self.verbose() {
             println!("[{}]\tBackup Details: {:?}",self.name(),summary);
         }
@@ -385,4 +383,12 @@ pub struct BackupSummary {
     pub total_bytes_processed: usize,
     pub total_duration: f32,
     pub snapshot_id: String
+}
+
+impl Display for BackupSummary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (added_unit,added) = format_size(self.data_added);
+        f.write_fmt(format_args!("took {}s, {added} {added_unit} added, {} new files, {} changed files, {} unchanged files",
+        self.total_duration,self.files_new,self.files_changed,self.files_unmodified))
+    }
 }

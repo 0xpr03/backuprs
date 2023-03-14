@@ -170,7 +170,7 @@ fn main() -> Result<()> {
                         std::thread::sleep(sleep_time.try_into().into_diagnostic()?);
                     }
                     match job.backup() {
-                        Ok(_) => print!("[{}]\tFinished backup.",job.name()),
+                        Ok(s) => (),
                         Err(e) => {
                             eprintln!("[{}]\tFailed to backup.",job.name());
                             return Err(e);
