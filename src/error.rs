@@ -26,4 +26,4 @@ impl PartialEq for CommandError {
     }
 }
 
-pub type ComRes<T> = std::result::Result<T,CommandError>;
+pub type ComRes<T> = std::result::Result<T, CommandError>;

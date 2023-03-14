@@ -1,25 +1,25 @@
+use miette::{miette, IntoDiagnostic, Result};
+use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::process::Command;
 use std::process::Output;
 use std::rc::Rc;
-use std::{process::Command};
-use miette::{miette, IntoDiagnostic, Result};
-use serde::Deserialize;
-use serde::de::DeserializeOwned;
-use time::{OffsetDateTime, Duration};
+use time::{Duration, OffsetDateTime};
 
-use crate::config::{self, JobData};
 use crate::config::Global;
+use crate::config::{self, JobData};
 use crate::error::{ComRes, CommandError};
 
-pub type JobMap = HashMap<String,Job>;
+pub type JobMap = HashMap<String, Job>;
 
 pub struct Job {
     data: JobData,
     globals: Rc<Global>,
     /// Last snapshot run
-    /// 
+    ///
     /// also tells whether this repo got intialized
     last_run: Cell<Option<OffsetDateTime>>,
     next_run: Cell<Option<OffsetDateTime>>,
@@ -51,27 +51,27 @@ impl Job {
     }
 
     /// Time of next expected backup run
-    pub fn next_run(&self) -> Result<OffsetDateTime> {   
+    pub fn next_run(&self) -> Result<OffsetDateTime> {
         if let Some(v) = self.next_run.get() {
             return Ok(v);
         }
         match self.last_run() {
             Some(last_run) => {
-                let v = last_run.checked_add(Duration::minutes(self.interval() as _)).expect("overflow calculating next backup time!");
+                let v = last_run
+                    .checked_add(Duration::minutes(self.interval() as _))
+                    .expect("overflow calculating next backup time!");
                 self.next_run.set(Some(v));
                 Ok(v)
-            },
-            None => {
-                OffsetDateTime::now_local().into_diagnostic()
             }
+            None => OffsetDateTime::now_local().into_diagnostic(),
         }
     }
 
     /// Update last_run value by fetching latest snapshots.
-    /// 
+    ///
     /// Can emit CommandError::NotInitialized.
     pub fn update_last_run(&mut self) -> ComRes<()> {
-        self.snapshots(Some(1)).map(|_|())
+        self.snapshots(Some(1)).map(|_| ())
     }
 
     #[inline]
@@ -81,42 +81,37 @@ impl Job {
 
     /// Perform dry run with verbose information
     pub fn dry_run(&mut self) -> Result<()> {
-        println!("[{}]\tStarting dry run",self.name());
+        println!("[{}]\tStarting dry run", self.name());
         self.assert_initialized()?;
         let mut cmd = self.command_base("backup", false)?;
-        cmd.args(["--verbose","--dry-run"]);
+        cmd.args(["--verbose", "--dry-run"]);
         self.backup_args(&mut cmd);
         let output = cmd.output().into_diagnostic()?;
         self.check_errors(&output)?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.trim().lines() {
             if self.verbose() {
-                println!(
-                    "[{}]\tRESTIC: {}",
-                    self.data.name,line
-                );
+                println!("[{}]\tRESTIC: {}", self.data.name, line);
             }
             let msg: BackupMessage = serde_json::from_str(line).into_diagnostic()?;
             // println!("{:?}",msg);
             match msg {
-                BackupMessage::VerboseStatus(v) => {
-                    match v.action.as_str() {
-                        "unchanged" => println!("[{}]\tUnchanged \"{}\"",self.name(),v.item),
-                        "new" => {
-                            let (unit,size) = format_size(v.data_size);
-                            println!("[{}]\tNew \"{}\" {} {}",self.name(),v.item,size,unit);
-                        },
-                        "changed" => {
-                            let (unit,size) = format_size(v.data_size);
-                            println!("[{}]\tNew \"{}\" {} {}",self.name(),v.item,size,unit);
-                        },
-                        v => eprintln!("Unknown restic action '{}'",v),
+                BackupMessage::VerboseStatus(v) => match v.action.as_str() {
+                    "unchanged" => println!("[{}]\tUnchanged \"{}\"", self.name(), v.item),
+                    "new" => {
+                        let (unit, size) = format_size(v.data_size);
+                        println!("[{}]\tNew \"{}\" {} {}", self.name(), v.item, size, unit);
                     }
+                    "changed" => {
+                        let (unit, size) = format_size(v.data_size);
+                        println!("[{}]\tNew \"{}\" {} {}", self.name(), v.item, size, unit);
+                    }
+                    v => eprintln!("Unknown restic action '{}'", v),
                 },
                 BackupMessage::Status(_) => (),
                 BackupMessage::Summary(s) => {
-                    println!("[{}] Dry-run finished. {}",self.name(),s);
-                },
+                    println!("[{}] Dry-run finished. {}", self.name(), s);
+                }
             }
         }
         Ok(())
@@ -127,7 +122,7 @@ impl Job {
         if self.last_run.get().is_none() {
             if self.update_last_run() == Err(CommandError::NotInitialized) {
                 if self.globals.verbose {
-                    println!("[{}] not initialized",self.name());
+                    println!("[{}] not initialized", self.name());
                 }
                 self.restic_init()?;
             }
@@ -138,7 +133,7 @@ impl Job {
     /// Unifies backup include / exclude arguments over dry runs and backups
     fn backup_args(&self, cmd: &mut Command) {
         for exclude in self.data.excludes.iter() {
-            cmd.args(["-e",exclude.as_str()]);
+            cmd.args(["-e", exclude.as_str()]);
         }
         // has to be last
         cmd.args(&self.data.paths);
@@ -146,18 +141,18 @@ impl Job {
 
     /// Run backup. Prints start and end. Does not check for correct duration to previous run.
     pub fn backup(&mut self) -> Result<BackupSummary> {
-        println!("[{}]\tStarting backup",self.name());
+        println!("[{}]\tStarting backup", self.name());
         self.assert_initialized()?;
 
-        let mut cmd = self.command_base("backup",true)?;
+        let mut cmd = self.command_base("backup", true)?;
 
         self.backup_args(&mut cmd);
         let output = cmd.output().into_diagnostic()?;
         self.check_errors(&output)?;
         let summary: BackupSummary = self.des_response(&output)?;
-        print!("[{}]\tBackup finished. {}",self.name(),summary);
+        print!("[{}]\tBackup finished. {}", self.name(), summary);
         if self.verbose() {
-            println!("[{}]\tBackup Details: {:?}",self.name(),summary);
+            println!("[{}]\tBackup Details: {:?}", self.name(), summary);
         }
         Ok(summary)
     }
@@ -170,7 +165,7 @@ impl Job {
                 self.print_output_verbose(output);
                 return Err(e.into());
             }
-        }; 
+        };
         Ok(res)
     }
 
@@ -182,9 +177,9 @@ impl Job {
     /// Initialize restic repository
     pub fn restic_init(&mut self) -> Result<()> {
         if self.verbose() {
-            println!("[{}] \t initializing repository",self.name());
+            println!("[{}] \t initializing repository", self.name());
         }
-        let mut cmd = self.command_base("init",true)?;
+        let mut cmd = self.command_base("init", true)?;
         let output = cmd.output().into_diagnostic()?;
         self.check_errors(&output)?;
         // println!("{}",String::from_utf8(output.stdout).unwrap());
@@ -199,15 +194,20 @@ impl Job {
             if !output.stderr.is_empty() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 if stderr.contains("Fatal: unable to open config file")
-                    && stderr.contains("<config/> does not exist") {
-                    if self.verbose() { // still print on verbose
+                    && stderr.contains("<config/> does not exist")
+                {
+                    if self.verbose() {
+                        // still print on verbose
                         self.print_output_verbose(output);
                     }
                     return Err(CommandError::NotInitialized);
                 }
             }
             self.print_output_verbose(output);
-            return Err(CommandError::ResticError(format!("status code {:?}",output.status.code())));
+            return Err(CommandError::ResticError(format!(
+                "status code {:?}",
+                output.status.code()
+            )));
         }
         if self.verbose() {
             self.print_output_verbose(output);
@@ -220,49 +220,42 @@ impl Job {
         if !output.stdout.is_empty() {
             let r_output = String::from_utf8_lossy(&output.stdout);
             for line in r_output.trim().lines() {
-                eprintln!(
-                    "[{}]\tRESTIC: {}",
-                    self.data.name,
-                    line
-                );
+                eprintln!("[{}]\tRESTIC: {}", self.data.name, line);
             }
         }
         if !output.stderr.is_empty() {
             let r_output = String::from_utf8_lossy(&output.stderr);
             for line in r_output.trim().lines() {
-                eprintln!(
-                    "[{}]\tRESTIC: {}",
-                    self.data.name,line
-                );
+                eprintln!("[{}]\tRESTIC: {}", self.data.name, line);
             }
         }
     }
 
     /// Retrive snapshots for repo
-    /// 
+    ///
     /// If checking for repository status, specify an amount
-    /// 
+    ///
     /// Also sets last_run / initialized flag based on outcome
     pub fn snapshots(&mut self, amount: Option<usize>) -> ComRes<Snapshots> {
-        let mut cmd = self.command_base("snapshots",true)?;
+        let mut cmd = self.command_base("snapshots", true)?;
         if let Some(amount) = amount {
             cmd.args(["--latest", &amount.to_string()]);
         }
-        
+
         let output = cmd.output()?;
         self.check_errors(&output)?;
         let snapshots: Snapshots = self.des_response(&output)?;
         if self.verbose() {
-            println!("[{}]\t Snapshots: {:?}",self.name(),snapshots);
+            println!("[{}]\t Snapshots: {:?}", self.name(), snapshots);
         }
-        self.last_run_update(snapshots.last().map(|v|v.time));
+        self.last_run_update(snapshots.last().map(|v| v.time));
         Ok(snapshots)
     }
 
     /// Restic command base
     fn command_base(&self, command: &'static str, quiet: bool) -> ComRes<Command> {
         let mut outp = Command::new(&self.globals.restic_binary);
-        outp.args([command,"--json"]);
+        outp.args([command, "--json"]);
         if quiet {
             outp.arg("-q");
         }
@@ -282,17 +275,17 @@ impl Job {
     }
 }
 
-const fn format_size(bytes: usize) -> (&'static str,usize) {
-    if bytes > 2<<40 {
-        ("TiB", bytes / (2<<40) )
-    } else if bytes > 2<<30 {
-        ("GiB", bytes / (2<<30) )
-    } else if bytes > 2<<20 {
-        ("MiB",bytes / (2<<20) )
-    } else if bytes > 2<<10 {
-        ("KiB",bytes / (2<<10) )
+const fn format_size(bytes: usize) -> (&'static str, usize) {
+    if bytes > 2 << 40 {
+        ("TiB", bytes / (2 << 40))
+    } else if bytes > 2 << 30 {
+        ("GiB", bytes / (2 << 30))
+    } else if bytes > 2 << 20 {
+        ("MiB", bytes / (2 << 20))
+    } else if bytes > 2 << 10 {
+        ("KiB", bytes / (2 << 10))
     } else {
-        ("B",bytes)
+        ("B", bytes)
     }
 }
 
@@ -316,12 +309,12 @@ pub enum BackupMessage {
     #[serde(rename = "status")]
     Status(BackupStatus),
     #[serde(rename = "summary")]
-    Summary(BackupSummary)
+    Summary(BackupSummary),
 }
 
 /// For some reason restic outputs 2 different kinds of normal status.
 /// One for intermediate steps, and one on finish.
-/// 
+///
 /// The difference is that the finish status contains an action : scan_finished thingy
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -338,7 +331,7 @@ pub struct BackupStatusFinish {
     pub data_size_in_repo: usize,
     pub metadata_size: usize,
     pub metadata_size_in_repo: usize,
-    pub total_files: usize
+    pub total_files: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -382,12 +375,12 @@ pub struct BackupSummary {
     pub total_files_processed: usize,
     pub total_bytes_processed: usize,
     pub total_duration: f32,
-    pub snapshot_id: String
+    pub snapshot_id: String,
 }
 
 impl Display for BackupSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (added_unit,added) = format_size(self.data_added);
+        let (added_unit, added) = format_size(self.data_added);
         f.write_fmt(format_args!("took {}s, {added} {added_unit} added, {} new files, {} changed files, {} unchanged files",
         self.total_duration,self.files_new,self.files_changed,self.files_unmodified))
     }

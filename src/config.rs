@@ -15,10 +15,14 @@ pub struct Conf {
 }
 
 impl Conf {
-    pub fn split(self) -> (Defaults,JobMap) {
+    pub fn split(self) -> (Defaults, JobMap) {
         let defaults = Rc::new(self.global);
-        let jobs: JobMap = self.job.into_iter().map(|v|(v.name.clone(),Job::new(v,defaults.clone()))).collect();
-        (defaults,jobs)
+        let jobs: JobMap = self
+            .job
+            .into_iter()
+            .map(|v| (v.name.clone(), Job::new(v, defaults.clone())))
+            .collect();
+        (defaults, jobs)
     }
 }
 

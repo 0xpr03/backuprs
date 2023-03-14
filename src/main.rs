@@ -5,21 +5,21 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
-use config::{Global, Conf};
+use config::{Conf, Global};
 use job::Job;
 use miette::{bail, Context, IntoDiagnostic, Result};
 
 use crate::error::CommandError;
 
 mod config;
-mod job;
 mod error;
+mod job;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     /// Verbose output
-    #[arg(short,long, default_value_t = false)]
+    #[arg(short, long, default_value_t = false)]
     verbose: bool,
     #[command(subcommand)]
     command: Commands,
@@ -27,17 +27,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Test config
-    Test { 
+    /// Test config or perform dry-runs
+    Test {
         /// Dry run, do not perform backup, only print what would happen.
-        /// 
-        /// Equals `restic backup --dry-run`
+        ///
+        /// Equals `restic backup --dry-run`. Requires job argument.
         #[arg(long, default_value_t = false)]
         dry_run: bool,
         /// Test specific job by name
         #[arg(short, long)]
         job: Option<String>,
-     },
+    },
     /// Force run all or one backup job
     Run {
         /// Run specific job by name
@@ -48,8 +48,7 @@ enum Commands {
         abort_on_error: bool,
     },
     /// Daemonize and run backups in specified intervals
-    Daemon {
-    }
+    Daemon {},
 }
 
 // /// Turn debugging information on
@@ -74,7 +73,10 @@ fn main() -> Result<()> {
     let (defaults, mut jobs) = config.split();
 
     match &cli.command {
-        Commands::Run { job, abort_on_error } => {
+        Commands::Run {
+            job,
+            abort_on_error,
+        } => {
             // maybe unify this here, but would require creating an ad-hoc iterator of
             // one element
             if let Some(jobname) = job {
@@ -82,12 +84,12 @@ fn main() -> Result<()> {
                     match job.backup() {
                         Ok(_) => (),
                         Err(e) => {
-                            eprintln!("[{}] Failed to backup.",job.name());
+                            eprintln!("[{}] Failed to backup.", job.name());
                             return Err(e);
                         }
                     }
                 } else {
-                    bail!("No job named '{}' found!",jobname);
+                    bail!("No job named '{}' found!", jobname);
                 }
             } else {
                 let mut run = 0;
@@ -97,13 +99,13 @@ fn main() -> Result<()> {
                         Ok(_) => (),
                         Err(e) => {
                             failed += 1;
-                            eprintln!("[{}]\tFailed to backup. {}",job.name(),e);
-                        },
+                            eprintln!("[{}]\tFailed to backup. {}", job.name(), e);
+                        }
                     }
                     run += 1;
                 }
-                println!("Backup run finished. {}/{} jobs failed.",failed, run);
-            }            
+                println!("Backup run finished. {}/{} jobs failed.", failed, run);
+            }
         }
         Commands::Test { dry_run, job } => {
             let mut failed = 0;
@@ -117,7 +119,7 @@ fn main() -> Result<()> {
                                 return Ok(());
                             }
                         }
-                        bail!("No job named '{}' found!",target_name);
+                        bail!("No job named '{}' found!", target_name);
                     }
                     None => {
                         bail!("Dry run flag requires a job name!");
@@ -125,7 +127,7 @@ fn main() -> Result<()> {
                 }
             }
             // println!("Backup starting time is {}",defaults.backup_start_time);
-            for (_,job) in jobs.iter_mut() {
+            for (_, job) in jobs.iter_mut() {
                 match job.update_last_run() {
                     Ok(v) => {
                         let next_run = job.next_run()?;
@@ -135,10 +137,10 @@ fn main() -> Result<()> {
                         job.last_run().expect("Expected at least one snapshot"),
                         next_run,
                     );
-                    },
+                    }
                     Err(e) => {
                         if e == CommandError::NotInitialized {
-                            println!("[{}]\tRepo not initialized?",job.name());
+                            println!("[{}]\tRepo not initialized?", job.name());
                         } else {
                             eprintln!("[{}]\tCheck failed: {}", job.name(), e);
                             failed += 1;
@@ -152,19 +154,24 @@ fn main() -> Result<()> {
                 println!("Test successfull");
             }
         }
-        Commands::Daemon { } => {
+        Commands::Daemon {} => {
             // update last_run for each job
             if jobs.is_empty() {
                 bail!("No backup jobs configured!");
             }
-            let mut jobs: Vec<_> = jobs.into_values().map(|mut v|{v.snapshots(Some(1)); v}).collect();
+            let mut jobs: Vec<_> = jobs
+                .into_values()
+                .map(|mut v| {
+                    v.snapshots(Some(1));
+                    v
+                })
+                .collect();
 
             loop {
-                jobs.sort_unstable_by(|a,b|a.next_run().unwrap().cmp(&b.next_run().unwrap()));
-                    
+                jobs.sort_unstable_by(|a, b| a.next_run().unwrap().cmp(&b.next_run().unwrap()));
+
                 while let Some(mut job) = jobs.pop() {
-                    let now = time::OffsetDateTime::now_local()
-                    .into_diagnostic()?;
+                    let now = time::OffsetDateTime::now_local().into_diagnostic()?;
                     let sleep_time = job.next_run()? - now;
                     if sleep_time.is_positive() {
                         std::thread::sleep(sleep_time.try_into().into_diagnostic()?);
@@ -172,7 +179,7 @@ fn main() -> Result<()> {
                     match job.backup() {
                         Ok(s) => (),
                         Err(e) => {
-                            eprintln!("[{}]\tFailed to backup.",job.name());
+                            eprintln!("[{}]\tFailed to backup.", job.name());
                             return Err(e);
                         }
                     }
@@ -180,7 +187,7 @@ fn main() -> Result<()> {
                     jobs.push(job);
                 }
             }
-        },
+        }
     }
 
     Ok(())
