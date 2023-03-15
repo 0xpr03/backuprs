@@ -4,8 +4,14 @@ use serde::Deserialize;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::io::Stderr;
+use std::process::ChildStderr;
 use std::process::Command;
+use std::process::ExitStatus;
 use std::process::Output;
+use std::process::Stdio;
 use std::rc::Rc;
 use time::{Duration, OffsetDateTime};
 
@@ -86,15 +92,21 @@ impl Job {
         let mut cmd = self.command_base("backup", false)?;
         cmd.args(["--verbose", "--dry-run"]);
         self.backup_args(&mut cmd);
-        let output = cmd.output().into_diagnostic()?;
-        self.check_errors(&output)?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.trim().lines() {
-            if self.verbose() {
-                println!("[{}]\tRESTIC: {}", self.data.name, line);
-            }
+        cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+        let mut handle = cmd.spawn().into_diagnostic()?;
+
+        let stdout = handle.stdout.take()
+        .ok_or_else(||miette!("Could not capture standard output."))?;
+        let stderr = handle.stderr.take()
+        .ok_or_else(||miette!("Could not capture standard output."))?;
+        let bufreader = BufReader::new(stdout);
+
+        for line in bufreader.lines().filter_map(|l|l.ok()) {
+            let line = line.trim();
+            self.check_error_stdout(line)?;
             let msg: BackupMessage = serde_json::from_str(line).into_diagnostic()?;
-            // println!("{:?}",msg);
             match msg {
                 BackupMessage::VerboseStatus(v) => match v.action.as_str() {
                     "unchanged" => println!("[{}]\tUnchanged \"{}\"", self.name(), v.item),
@@ -114,6 +126,10 @@ impl Job {
                 }
             }
         }
+        let status = handle.wait().into_diagnostic()?;
+
+        self.check_errors_stderr(stderr, status)?;
+
         Ok(())
     }
 
@@ -188,6 +204,54 @@ impl Job {
         Ok(())
     }
 
+    /// Check for errors in stderr, for streaming commands
+    fn check_errors_stderr(&self, stderr: ChildStderr, status: ExitStatus) -> ComRes<()> {
+        let stderr = BufReader::new(stderr);
+        for line in stderr.lines().filter_map(|l|l.ok()) {
+            if line.trim().starts_with("Fatal") || !status.success() {
+                if line.contains("Fatal: unable to open config file")
+                    && line.contains("<config/> does not exist")
+                {
+                    if self.verbose() {
+                        // still print on verbose
+                        self.print_line_verbose(&line,true);
+                    }
+                    return Err(CommandError::NotInitialized);
+                }
+                self.print_line_verbose(&line,true);
+                return Err(CommandError::ResticError(format!(
+                    "status code {:?}",
+                    status.code()
+                )));
+            }
+            if self.verbose() {
+                self.print_line_verbose(&line,true);
+            }
+        }
+        Ok(())
+    }
+
+    /// Check stdout line for errors, for streaming commands
+    fn check_error_stdout(&self, line: &str) -> ComRes<()> {
+        if line.starts_with("Fatal") {
+            if line.contains("Fatal: unable to open config file")
+                    && line.contains("<config/> does not exist")
+                {
+                    if self.verbose() {
+                        // still print on verbose
+                        self.print_line_verbose(line,false);
+                    }
+                    return Err(CommandError::NotInitialized);
+                }
+            self.print_line_verbose(line,false);
+            return Err(CommandError::ResticError(String::new()));
+        }
+        if self.verbose() {
+            self.print_line_verbose(line,false);
+        }
+        Ok(())
+    }
+
     /// Check restic respone for errors
     fn check_errors(&self, output: &Output) -> ComRes<()> {
         if output.stdout.starts_with(b"Fatal") || !output.status.success() {
@@ -213,6 +277,15 @@ impl Job {
             self.print_output_verbose(output);
         }
         Ok(())
+    }
+
+    #[inline]
+    fn print_line_verbose(&self, line: &str, stderr: bool) {
+        if stderr {
+            eprintln!("[{}]\tRESTIC: {}", self.data.name, line);
+        } else {
+            println!("[{}]\tRESTIC: {}", self.data.name, line);
+        }
     }
 
     /// Helper to print restic cmd output for verbose flag
