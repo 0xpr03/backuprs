@@ -1,8 +1,13 @@
+use std::fmt::Display;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::str::FromStr;
 
 use miette::{bail, Result};
 use serde::Deserialize;
+use serde::Deserializer;
+use serde::de;
+use time::format_description;
 
 use crate::job::Job;
 use crate::job::JobMap;
@@ -40,8 +45,30 @@ pub struct Global {
     pub verbose: bool,
     /// Default interval to use for backup jobs
     pub default_interval: u64,
-    /// Backup time
-    pub backup_start_time: Option<time::Time>,
+    /// Period of time to perform backup jobs
+    pub period: Option<BackupTimeRange>
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BackupTimeRange {
+    /// Backup time start
+    #[serde(deserialize_with="deserialize_time")]
+    pub backup_start_time: time::Time,
+    /// Backup time end
+    #[serde(deserialize_with="deserialize_time")]
+    pub backup_end_time: time::Time,
+}
+
+/// Deserialize a type `S` by deserializing a string, then using the `FromStr`
+/// impl of `S` to create the result. The generic type `S` is not required to
+/// implement `Deserialize`.
+fn deserialize_time<'de, D>(deserializer: D) -> Result<time::Time, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let string: String = Deserialize::deserialize(deserializer)?;
+    let time_fmt = format_description::parse("[hour]:[minute]").map_err(de::Error::custom)?;
+    time::Time::parse(&string, &time_fmt).map_err(de::Error::custom)
 }
 
 impl Global {

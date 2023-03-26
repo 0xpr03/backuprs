@@ -126,6 +126,17 @@ fn main() -> Result<()> {
                     }
                 }
             }
+            match &defaults.period {
+                Some(period) => {
+                    let format = time::format_description::parse("[hour]:[minute]")
+                        .into_diagnostic()?;
+                    let start_fmt = period.backup_start_time.format(&format).into_diagnostic()?;
+                    let end_fmt = period.backup_end_time.format(&format).into_diagnostic()?;
+                    println!("Backup period specified. Backups will only start between {} and {}  o'clock.",
+                    start_fmt,end_fmt);
+                }
+                None => println!("No backup period specified. Jobs start when intervall timeout is reached."),
+            }
             // println!("Backup starting time is {}",defaults.backup_start_time);
             for (_, job) in jobs.iter_mut() {
                 match job.update_last_run() {

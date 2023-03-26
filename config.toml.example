@@ -8,6 +8,13 @@ restic_binary = "C:/restic_0.15.1_windows_amd64/restic_0.15.1_windows_amd64.exe"
 # Default intervall for jobs in minutes
 default_interval = 86400
 
+# [global.period]
+# Optionally limit backup scheduling to the following time frame
+# start time
+# backup_start_time = "22:00"
+# end time
+# backup_end_time = "05:00"
+
 # Rest-Server as backend
 [global.Rest]
 # URL for rest server to use for all jobs
