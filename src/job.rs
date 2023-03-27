@@ -93,17 +93,21 @@ impl Job {
         cmd.args(["--verbose", "--dry-run"]);
         self.backup_args(&mut cmd);
         cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         let mut handle = cmd.spawn().into_diagnostic()?;
 
-        let stdout = handle.stdout.take()
-        .ok_or_else(||miette!("Could not capture standard output."))?;
-        let stderr = handle.stderr.take()
-        .ok_or_else(||miette!("Could not capture standard output."))?;
+        let stdout = handle
+            .stdout
+            .take()
+            .ok_or_else(|| miette!("Could not capture standard output."))?;
+        let stderr = handle
+            .stderr
+            .take()
+            .ok_or_else(|| miette!("Could not capture standard output."))?;
         let bufreader = BufReader::new(stdout);
 
-        for line in bufreader.lines().filter_map(|l|l.ok()) {
+        for line in bufreader.lines().filter_map(|l| l.ok()) {
             let line = line.trim();
             self.check_error_stdout(line)?;
             let msg: BackupMessage = serde_json::from_str(line).into_diagnostic()?;
@@ -207,25 +211,25 @@ impl Job {
     /// Check for errors in stderr, for streaming commands
     fn check_errors_stderr(&self, stderr: ChildStderr, status: ExitStatus) -> ComRes<()> {
         let stderr = BufReader::new(stderr);
-        for line in stderr.lines().filter_map(|l|l.ok()) {
+        for line in stderr.lines().filter_map(|l| l.ok()) {
             if line.trim().starts_with("Fatal") || !status.success() {
                 if line.contains("Fatal: unable to open config file")
                     && line.contains("<config/> does not exist")
                 {
                     if self.verbose() {
                         // still print on verbose
-                        self.print_line_verbose(&line,true);
+                        self.print_line_verbose(&line, true);
                     }
                     return Err(CommandError::NotInitialized);
                 }
-                self.print_line_verbose(&line,true);
+                self.print_line_verbose(&line, true);
                 return Err(CommandError::ResticError(format!(
                     "status code {:?}",
                     status.code()
                 )));
             }
             if self.verbose() {
-                self.print_line_verbose(&line,true);
+                self.print_line_verbose(&line, true);
             }
         }
         Ok(())
@@ -235,19 +239,19 @@ impl Job {
     fn check_error_stdout(&self, line: &str) -> ComRes<()> {
         if line.starts_with("Fatal") {
             if line.contains("Fatal: unable to open config file")
-                    && line.contains("<config/> does not exist")
-                {
-                    if self.verbose() {
-                        // still print on verbose
-                        self.print_line_verbose(line,false);
-                    }
-                    return Err(CommandError::NotInitialized);
+                && line.contains("<config/> does not exist")
+            {
+                if self.verbose() {
+                    // still print on verbose
+                    self.print_line_verbose(line, false);
                 }
-            self.print_line_verbose(line,false);
+                return Err(CommandError::NotInitialized);
+            }
+            self.print_line_verbose(line, false);
             return Err(CommandError::ResticError(String::new()));
         }
         if self.verbose() {
-            self.print_line_verbose(line,false);
+            self.print_line_verbose(line, false);
         }
         Ok(())
     }

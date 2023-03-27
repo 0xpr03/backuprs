@@ -4,9 +4,9 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use miette::{bail, Result};
+use serde::de;
 use serde::Deserialize;
 use serde::Deserializer;
-use serde::de;
 use time::format_description;
 
 use crate::job::Job;
@@ -46,16 +46,16 @@ pub struct Global {
     /// Default interval to use for backup jobs
     pub default_interval: u64,
     /// Period of time to perform backup jobs
-    pub period: Option<BackupTimeRange>
+    pub period: Option<BackupTimeRange>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BackupTimeRange {
     /// Backup time start
-    #[serde(deserialize_with="deserialize_time")]
+    #[serde(deserialize_with = "deserialize_time")]
     pub backup_start_time: time::Time,
     /// Backup time end
-    #[serde(deserialize_with="deserialize_time")]
+    #[serde(deserialize_with = "deserialize_time")]
     pub backup_end_time: time::Time,
 }
 

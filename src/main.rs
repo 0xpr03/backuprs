@@ -129,14 +129,16 @@ fn main() -> Result<()> {
             }
             match &defaults.period {
                 Some(period) => {
-                    let format = time::format_description::parse("[hour]:[minute]")
-                        .into_diagnostic()?;
+                    let format =
+                        time::format_description::parse("[hour]:[minute]").into_diagnostic()?;
                     let start_fmt = period.backup_start_time.format(&format).into_diagnostic()?;
                     let end_fmt = period.backup_end_time.format(&format).into_diagnostic()?;
                     println!("Backup period specified. Backups will only start between {} and {}  o'clock.",
                     start_fmt,end_fmt);
                 }
-                None => println!("No backup period specified. Jobs start when intervall timeout is reached."),
+                None => println!(
+                    "No backup period specified. Jobs start when intervall timeout is reached."
+                ),
             }
             // println!("Backup starting time is {}",defaults.backup_start_time);
             for (_, job) in jobs.iter_mut() {
@@ -184,9 +186,11 @@ fn main() -> Result<()> {
 
                 if let Some(period) = &defaults.period {
                     let now = OffsetDateTime::now_local().into_diagnostic()?;
-                    if let Some(duration) = calc_period_sleep(period.backup_start_time, period.backup_end_time, now) {
+                    if let Some(duration) =
+                        calc_period_sleep(period.backup_start_time, period.backup_end_time, now)
+                    {
                         std::thread::sleep(duration.try_into().into_diagnostic()?);
-                    }                    
+                    }
                 }
 
                 while let Some(mut job) = jobs.pop() {
@@ -246,35 +250,25 @@ fn check_restic(cfg: &Global) -> Result<()> {
     Ok(())
 }
 
-fn calc_period_sleep(start: Time, end: Time, current_datetime: OffsetDateTime) -> Option<std::time::Duration> {
+fn calc_period_sleep(
+    start: Time,
+    end: Time,
+    current_datetime: OffsetDateTime,
+) -> Option<std::time::Duration> {
     let c_time = current_datetime.time();
-    // let in_period = match end > start {
-    //     // ex 6:00 - 18:00
-    //     true => time >= start && time <= end,// time < start  || time >= end
-    //     // 22:00 - 02:00
-    //     false => time >= start || (time < start && time < end) // time < start && (time >= start || time >= end)
-    //     // (time < start && time >= start) || time < start && time >= end
-    // };
-
-    // match in_period {
-    //     true => None,
-    //     false => {
-    //         let new_run = current_time.replace_time(start) + time::Duration::DAY;
-    //         Some((new_run - current_time).try_into().unwrap())
-    //     }
-    // }
-
     match end > start {
         // ex 06:00 - 18:00
         true => {
             if c_time < start {
+                // ex 05:00
                 return Some((start - c_time).try_into().unwrap());
             } else if c_time >= end {
+                // ex 22:00
                 let new_run = current_datetime.replace_time(start) + time::Duration::DAY;
                 return Some((new_run - current_datetime).try_into().unwrap());
             }
             None
-        },
+        }
         // ex 22:00 - 02:00
         false => {
             // ex 19:00
@@ -290,8 +284,8 @@ fn calc_period_sleep(start: Time, end: Time, current_datetime: OffsetDateTime) -
 mod tests {
     use std::time::Duration;
 
-    use time::Time;
     use super::*;
+    use time::Time;
 
     #[test]
     fn test_calc_period() {
@@ -300,18 +294,66 @@ mod tests {
         let end = Time::from_hms(7, 0, 0).unwrap();
         let date_time = OffsetDateTime::now_local().unwrap();
 
-        assert_eq!(None, calc_period_sleep(start,end,date_time.replace_time(Time::from_hms(6, 0, 0).unwrap())));
-        assert_eq!(None, calc_period_sleep(start,end,date_time.replace_time(Time::from_hms(5, 0, 0).unwrap())));
-        assert_eq!(Some(Duration::from_secs(60*60)), calc_period_sleep(start,end,date_time.replace_time(Time::from_hms(4, 0, 0).unwrap())));
-        assert_eq!(Some(Duration::from_secs(60*60*22)), calc_period_sleep(start,end,date_time.replace_time(Time::from_hms(7, 0, 0).unwrap())));
+        assert_eq!(
+            None,
+            calc_period_sleep(
+                start,
+                end,
+                date_time.replace_time(Time::from_hms(6, 0, 0).unwrap())
+            )
+        );
+        assert_eq!(
+            None,
+            calc_period_sleep(
+                start,
+                end,
+                date_time.replace_time(Time::from_hms(5, 0, 0).unwrap())
+            )
+        );
+        assert_eq!(
+            Some(Duration::from_secs(60 * 60)),
+            calc_period_sleep(
+                start,
+                end,
+                date_time.replace_time(Time::from_hms(4, 0, 0).unwrap())
+            )
+        );
+        assert_eq!(
+            Some(Duration::from_secs(60 * 60 * 22)),
+            calc_period_sleep(
+                start,
+                end,
+                date_time.replace_time(Time::from_hms(7, 0, 0).unwrap())
+            )
+        );
 
         // 22:00-02:00
         let start = Time::from_hms(22, 0, 0).unwrap();
         let end = Time::from_hms(2, 0, 0).unwrap();
 
-        assert_eq!(None, calc_period_sleep(start,end,date_time.replace_time(Time::from_hms(23, 0, 0).unwrap())));
-        assert_eq!(None, calc_period_sleep(start,end,date_time.replace_time(Time::from_hms(1, 0, 0).unwrap())));
-        assert_eq!(Some(Duration::from_secs(60*60)), calc_period_sleep(start,end,date_time.replace_time(Time::from_hms(21, 0, 0).unwrap())));
-        // assert_eq!(Some(Duration::from_secs(60*60*22)), calc_period_sleep(start,end,date_time.replace_time(Time::from_hms(00, 0, 0).unwrap())));
+        assert_eq!(
+            None,
+            calc_period_sleep(
+                start,
+                end,
+                date_time.replace_time(Time::from_hms(23, 0, 0).unwrap())
+            )
+        );
+        assert_eq!(
+            None,
+            calc_period_sleep(
+                start,
+                end,
+                date_time.replace_time(Time::from_hms(1, 0, 0).unwrap())
+            )
+        );
+        assert_eq!(
+            Some(Duration::from_secs(60 * 60)),
+            calc_period_sleep(
+                start,
+                end,
+                date_time.replace_time(Time::from_hms(21, 0, 0).unwrap())
+            )
+        );
     }
 }
