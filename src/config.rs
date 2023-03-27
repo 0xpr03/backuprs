@@ -80,6 +80,11 @@ impl Global {
         if !self.restic_binary.is_file() {
             bail!("Path for config value 'restic_binary' is not a file!");
         }
+        if let Some(period) = &self.period {
+            if period.backup_start_time == period.backup_end_time {
+                bail!("Backup period start and end time can't be the same!");
+            }
+        }
         Ok(())
     }
     pub fn repo_url(&self, job: &JobData) -> String {
