@@ -32,13 +32,20 @@ pub struct Job {
 }
 
 impl Job {
-    pub fn new(data: JobData, global: Rc<Global>) -> Self {
-        Self {
+    pub fn new(data: JobData, global: Rc<Global>) -> Result<Self> {
+        let job = Self {
             data,
             globals: global,
             last_run: Cell::new(None),
             next_run: Cell::new(None),
-        }
+        };
+        job.verify()?;
+        Ok(job)
+    }
+
+    fn verify(&self) -> Result<()> {
+        // unused
+        Ok(())
     }
 
     /// Time of last backup run

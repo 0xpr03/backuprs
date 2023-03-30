@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use miette::{bail, Result};
+use miette::{Context, IntoDiagnostic};
 use serde::de;
 use serde::Deserialize;
 use serde::Deserializer;
@@ -20,14 +21,20 @@ pub struct Conf {
 }
 
 impl Conf {
-    pub fn split(self) -> (Defaults, JobMap) {
+    pub fn split(self) -> Result<(Defaults, JobMap)> {
+        self.global.check()?;
         let defaults = Rc::new(self.global);
-        let jobs: JobMap = self
+        let jobs: Result<JobMap> = self
             .job
             .into_iter()
-            .map(|v| (v.name.clone(), Job::new(v, defaults.clone())))
+            .map(|v| {
+                let name = v.name.clone();
+                let job = Job::new(v, defaults.clone())?;
+                Ok((name, job))
+            })
             .collect();
-        (defaults, jobs)
+
+        Ok((defaults, jobs?))
     }
 }
 
@@ -83,6 +90,21 @@ impl Global {
         if let Some(period) = &self.period {
             if period.backup_start_time == period.backup_end_time {
                 bail!("Backup period start and end time can't be the same!");
+            }
+        }
+        match &self.backend {
+            RepositoryData::Rest {
+                rest_url: _,
+                server_pubkey_file,
+            } => {
+                if let Some(pubkey_file) = server_pubkey_file {
+                    if !pubkey_file.exists() {
+                        bail!("Rest 'server_pubkey_file' specified, but file does not exist?");
+                    }
+                    std::fs::File::open(&pubkey_file)
+                        .into_diagnostic()
+                        .wrap_err("Rest 'server_pubkey_file' specified, but can't read file?")?;
+                }
             }
         }
         Ok(())

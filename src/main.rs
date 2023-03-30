@@ -71,12 +71,12 @@ fn main() -> Result<()> {
     config.global.check()?;
     check_restic(&config.global)?;
     // TODO: fail on duplicate job names
-    let (defaults, mut jobs) = config.split();
+    let (defaults, mut jobs) = config.split()?;
 
     match &cli.command {
         Commands::Run {
             job,
-            abort_on_error,
+            abort_on_error: _,
         } => {
             // maybe unify this here, but would require creating an ad-hoc iterator of
             // one element
@@ -218,6 +218,15 @@ fn main() -> Result<()> {
 
 fn read_config() -> Result<Conf> {
     let file = File::open("config.toml").into_diagnostic()?;
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mt = file.metadata().into_diagnostic()?;
+        let mode = mt.permissions().mode();
+        if mode & 0o007 != 0 {
+            bail!("Config file is world readable, aborting!");
+        }
+    }
     let mut reader = BufReader::new(file);
     let mut cfg = String::new();
     reader.read_to_string(&mut cfg).into_diagnostic()?;
