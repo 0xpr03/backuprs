@@ -105,16 +105,15 @@ impl Job {
 
     /// Perform dry run with verbose information
     pub fn backup_inner(&mut self, dry_run: bool) -> Result<BackupSummary> {
-        
         self.assert_initialized()?;
 
         let mut context = BackupContext::new();
         self.run_pre_jobs(&mut context)?;
 
         let mut cmd = self.command_base("backup", false)?;
-        
+
         if dry_run {
-            cmd.args(["--verbose","--dry-run"]);
+            cmd.args(["--verbose", "--dry-run"]);
         } else if self.verbose() {
             cmd.arg("--verbose");
         }
@@ -150,19 +149,20 @@ impl Job {
             match msg {
                 BackupMessage::VerboseStatus(v) => {
                     if dry_run || verbose {
-                    match v.action.as_str() {
-                    "unchanged" => println!("[{}]\tUnchanged \"{}\"", self.name(), v.item),
-                    "new" => {
-                        let (unit, size) = format_size(v.data_size);
-                        println!("[{}]\tNew \"{}\" {} {}", self.name(), v.item, size, unit);
+                        match v.action.as_str() {
+                            "unchanged" => println!("[{}]\tUnchanged \"{}\"", self.name(), v.item),
+                            "new" => {
+                                let (unit, size) = format_size(v.data_size);
+                                println!("[{}]\tNew \"{}\" {} {}", self.name(), v.item, size, unit);
+                            }
+                            "changed" => {
+                                let (unit, size) = format_size(v.data_size);
+                                println!("[{}]\tNew \"{}\" {} {}", self.name(), v.item, size, unit);
+                            }
+                            v => eprintln!("Unknown restic action '{}'", v),
+                        }
                     }
-                    "changed" => {
-                        let (unit, size) = format_size(v.data_size);
-                        println!("[{}]\tNew \"{}\" {} {}", self.name(), v.item, size, unit);
-                    }
-                    v => eprintln!("Unknown restic action '{}'", v),
-                }}}
-                ,
+                }
                 BackupMessage::Status(_) => (),
                 BackupMessage::Summary(s) => {
                     backup_summary = Some(s);
