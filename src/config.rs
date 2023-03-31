@@ -1,5 +1,7 @@
+use std::cell::Cell;
 use std::fmt::Display;
 use std::path::PathBuf;
+use std::process::Command;
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -54,6 +56,14 @@ pub struct Global {
     pub default_interval: u64,
     /// Period of time to perform backup jobs
     pub period: Option<BackupTimeRange>,
+    /// Mysql Dumb Path
+    pub mysql_dumb_binary: Option<PathBuf>,
+    /// Postgres Dumb Path
+    pub postgres_dumb_binary: Option<PathBuf>,
+    #[serde(default)]
+    pub verified_mysql_binary: Cell<bool>,
+    #[serde(default)]
+    pub verified_postgres_binary: Cell<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,6 +100,16 @@ impl Global {
         if let Some(period) = &self.period {
             if period.backup_start_time == period.backup_end_time {
                 bail!("Backup period start and end time can't be the same!");
+            }
+        }
+        if let Some(path) = &self.mysql_dumb_binary {
+            if !path.is_file() {
+                bail!("Path for config value 'mysql_dumb_binary' is not an exsiting file!");
+            }
+        }
+        if let Some(path) = &self.postgres_dumb_binary {
+            if !path.is_file() {
+                bail!("Path for config value 'postgres_dumb_binary' is not an exsiting file!");
             }
         }
         match &self.backend {
@@ -132,6 +152,30 @@ impl Global {
             }
         }
     }
+    pub fn mysql_cmd_base(&self) -> Command {
+        if let Some(path) = &self.mysql_dumb_binary {
+            Command::new(path)
+        } else {
+            #[cfg(target_os = "windows")]
+            let cmd = "mysqldump.exe";
+            #[cfg(not(target_os = "windows"))]
+            let cmd = "mysqldump";
+
+            Command::new(cmd)
+        }
+    }
+    pub fn postgres_cmd_base(&self) -> Command {
+        if let Some(path) = &self.postgres_dumb_binary {
+            Command::new(path)
+        } else {
+            #[cfg(target_os = "windows")]
+            let cmd = "pg_dumb.exe";
+            #[cfg(not(target_os = "windows"))]
+            let cmd = "pg_dumb";
+
+            Command::new(cmd)
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,4 +214,8 @@ pub struct JobData {
     pub post_command_on_failure: bool,
     /// Interval in which to perform the backup
     pub interval: Option<u64>,
+    /// MySQL database name to backup
+    pub mysql_db: Option<String>,
+    /// Postgres database name to backup
+    pub postgres_db: Option<String>,
 }

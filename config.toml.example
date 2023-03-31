@@ -8,6 +8,12 @@ restic_binary = "C:/restic_0.15.1_windows_amd64/restic_0.15.1_windows_amd64.exe"
 # Default intervall for jobs in minutes
 default_interval = 86400
 
+# mysql dumb binary, if used for database backups
+# mysql_dumb_binary = "C:/Program Files/mysql/mysqldump.exe"
+
+# postgres dumb binary, if used for database backups
+# postgres_dumb_binary = "C:/Program Files/PostgreSQL/14/bin/pg_dump.exe"
+
 # [global.period]
 # Optionally limit backup scheduling to the following time frame
 # start time
