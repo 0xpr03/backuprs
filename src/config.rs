@@ -1,9 +1,7 @@
 use std::cell::Cell;
-use std::fmt::Display;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
-use std::str::FromStr;
 
 use miette::{bail, Result};
 use miette::{Context, IntoDiagnostic};
@@ -195,7 +193,7 @@ pub struct JobData {
     /// For referencing jobs in commands and output
     pub name: String,
     /// Command to run pre backup
-    pub pre_command: Option<String>,
+    pub pre_command: Option<CommandData>,
     /// Paths to include for backup
     pub paths: Vec<PathBuf>,
     /// Exclude items see [restic docs](https://restic.readthedocs.io/en/latest/040_backup.html#excluding-files)
@@ -209,7 +207,7 @@ pub struct JobData {
     /// Encryption key
     pub repository_key: String,
     /// Command to run post backup
-    pub post_command: Option<String>,
+    pub post_command: Option<CommandData>,
     /// Whether to run the post_command even on backup failure
     pub post_command_on_failure: bool,
     /// Interval in which to perform the backup
@@ -218,4 +216,12 @@ pub struct JobData {
     pub mysql_db: Option<String>,
     /// Postgres database name to backup
     pub postgres_db: Option<String>,
+}
+
+/// Pre/Post user supplied command
+#[derive(Debug, Deserialize)]
+pub struct CommandData {
+    pub command: String,
+    pub args: Vec<String>,
+    pub workdir: PathBuf,
 }

@@ -2,6 +2,7 @@ use miette::{bail, Context};
 use miette::{miette, IntoDiagnostic, Result};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -19,8 +20,8 @@ use std::rc::Rc;
 use temp_dir::TempDir;
 use time::{Duration, OffsetDateTime};
 
-use crate::config::Global;
 use crate::config::{self, JobData};
+use crate::config::{CommandData, Global};
 use crate::error::{ComRes, CommandError};
 
 pub type JobMap = HashMap<String, Job>;
@@ -62,7 +63,7 @@ impl Job {
     }
 
     /// Update last_run and invalidate next_run
-    fn last_run_update(&mut self, last_run: Option<OffsetDateTime>) {
+    fn last_run_update(&self, last_run: Option<OffsetDateTime>) {
         self.last_run.set(last_run);
         self.next_run.set(None);
     }
@@ -87,7 +88,7 @@ impl Job {
     /// Update last_run value by fetching latest snapshots.
     ///
     /// Can emit CommandError::NotInitialized.
-    pub fn update_last_run(&mut self) -> ComRes<()> {
+    pub fn update_last_run(&self) -> ComRes<()> {
         self.snapshots(Some(1)).map(|_| ())
     }
 
@@ -99,16 +100,29 @@ impl Job {
     /// Perform dry run with verbose information
     pub fn dry_run(&mut self) -> Result<()> {
         println!("[{}]\tStarting dry run", self.name());
-        self.backup_inner(true)?;
+        self.inner_backup(true)?;
         Ok(())
     }
 
+    fn inner_backup(&self, dry_run: bool) -> Result<BackupSummary> {
+        let mut context = BackupContext::new(&self.data);
+        let res = self._inner_backup(&mut context, dry_run);
+        if let Err(e) = self.run_post_jobs(&mut context) {
+            // don't overwrite the backup error
+            if res.is_err() {
+                eprintln!("Failed to perform post-jobs: {}", e);
+            } else {
+                return Err(e);
+            }
+        }
+        res
+    }
+
     /// Perform dry run with verbose information
-    pub fn backup_inner(&mut self, dry_run: bool) -> Result<BackupSummary> {
+    fn _inner_backup(&self, context: &mut BackupContext, dry_run: bool) -> Result<BackupSummary> {
         self.assert_initialized()?;
 
-        let mut context = BackupContext::new();
-        self.run_pre_jobs(&mut context)?;
+        self.run_pre_jobs(context)?;
 
         let mut cmd = self.command_base("backup", false)?;
 
@@ -121,8 +135,7 @@ impl Job {
             cmd.args(["-e", exclude.as_str()]);
         }
         // backup paths have to be last
-        cmd.args(&self.data.paths);
-        cmd.args(&context.backup_targets);
+        cmd.args(context.backup_paths());
 
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -173,18 +186,17 @@ impl Job {
 
         self.check_errors_stderr(stderr, status)?;
 
-        self.run_post_jobs(&mut context)?;
-
-        drop(context);
-
-        match backup_summary {
+        let summary = match backup_summary {
             Some(v) => Ok(v),
             None => bail!("No backup summary received from restic"),
-        }
+        };
+        // post_jobs run by context
+        context.set_successfull();
+        summary
     }
 
     /// Make sure the repo is initialized
-    fn assert_initialized(&mut self) -> Result<()> {
+    fn assert_initialized(&self) -> Result<()> {
         if self.last_run.get().is_none() {
             if self.update_last_run() == Err(CommandError::NotInitialized) {
                 if self.globals.verbose {
@@ -196,7 +208,7 @@ impl Job {
         Ok(())
     }
 
-    fn run_pre_jobs(&mut self, context: &mut BackupContext) -> Result<()> {
+    fn run_pre_jobs(&self, context: &mut BackupContext) -> Result<()> {
         if let Some(mysql_db) = self.data.mysql_db.as_deref() {
             let path = context.temp_dir()?;
             let dumb_path = path.join("db_dumb_mysql.sql");
@@ -247,17 +259,64 @@ impl Job {
             }
             context.register_backup_target(dumb_path);
         }
+        if let Some(command_data) = &self.data.pre_command {
+            self.run_user_command(context, command_data, "pre-command")?;
+        }
         Ok(())
     }
 
-    fn run_post_jobs(&mut self, context: &mut BackupContext) -> Result<()> {
+    fn run_user_command(
+        &self,
+        context: &mut BackupContext,
+        command: &CommandData,
+        err_naming: &'static str,
+    ) -> Result<()> {
+        let path = context.temp_dir()?;
+
+        let delimiter = std::ffi::OsStr::new(";");
+        let targets = self
+            .data
+            .paths
+            .iter()
+            .fold(OsString::new(), |mut acc, path| {
+                if !acc.is_empty() {
+                    acc.push(&delimiter);
+                }
+                acc.push(path);
+                acc
+            });
+        let output = Command::new(&command.command)
+            .args(&command.args)
+            .env("TEMP_FOLDER", path)
+            .env("BACKUP_TARGETS", targets)
+            .output()
+            .into_diagnostic()
+            .wrap_err_with(|| format!("spawning {err_naming}"))?;
+        if !output.status.success() {
+            self.print_output_verbose(&output, err_naming);
+            bail!(
+                "{err_naming} failed, exit code {}",
+                output.status.code().unwrap_or(0)
+            )
+        } else if self.verbose() {
+            self.print_output_verbose(&output, err_naming);
+        }
+        Ok(())
+    }
+
+    fn run_post_jobs(&self, context: &mut BackupContext) -> Result<()> {
+        if let Some(command_data) = &self.data.post_command {
+            if self.data.post_command_on_failure || context.success {
+                self.run_user_command(context, command_data, "post-command")?;
+            }
+        }
         Ok(())
     }
 
     /// Run backup. Prints start and end. Does not check for correct duration to previous run.
     pub fn backup(&mut self) -> Result<BackupSummary> {
         println!("[{}]\tStarting backup", self.name());
-        let summary = self.backup_inner(false)?;
+        let summary = self.inner_backup(false)?;
         print!("[{}]\tBackup finished. {}", self.name(), summary);
         if self.verbose() {
             println!("[{}]\tBackup Details: {:?}", self.name(), summary);
@@ -283,7 +342,7 @@ impl Job {
     }
 
     /// Initialize restic repository
-    pub fn restic_init(&mut self) -> Result<()> {
+    pub fn restic_init(&self) -> Result<()> {
         if self.verbose() {
             println!("[{}] \t initializing repository", self.name());
         }
@@ -411,7 +470,7 @@ impl Job {
     /// If checking for repository status, specify an amount
     ///
     /// Also sets last_run / initialized flag based on outcome
-    pub fn snapshots(&mut self, amount: Option<usize>) -> ComRes<Snapshots> {
+    pub fn snapshots(&self, amount: Option<usize>) -> ComRes<Snapshots> {
         let mut cmd = self.command_base("snapshots", true)?;
         if let Some(amount) = amount {
             cmd.args(["--latest", &amount.to_string()]);
@@ -453,17 +512,32 @@ impl Job {
 // /// Guard container, for example containing cleanup jobs to perform on drop
 // struct Guards(Vec<Box<dyn std::any::Any>>);
 
-struct BackupContext {
+struct BackupContext<'a> {
+    /// temporary directory to be used for additional operations
+    ///
+    /// Not backed up, but removed on job end
     temp_dir: Option<TempDir>,
-    backup_targets: Vec<PathBuf>,
+    /// Whether this job has had no errors.
+    /// Used for post-command evaluation.
+    success: bool,
+    /// additional backup targets
+    backup_targets: Vec<Cow<'a, Path>>,
 }
 
-impl BackupContext {
-    pub fn new() -> Self {
-        Self {
+impl<'a> BackupContext<'a> {
+    pub fn new(job: &'a JobData) -> Self {
+        let mut context = Self {
             temp_dir: None,
+            success: false,
             backup_targets: Vec::with_capacity(2),
-        }
+        };
+        let mut paths: Vec<Cow<'a, Path>> = job
+            .paths
+            .iter()
+            .map(|v| Cow::Borrowed(v.as_path()))
+            .collect();
+        context.backup_targets.append(&mut paths);
+        context
     }
 
     /// Get path for temporary directory
@@ -476,9 +550,18 @@ impl BackupContext {
         Ok(self.temp_dir.as_ref().unwrap().path())
     }
 
+    pub fn backup_paths(&self) -> Vec<&Path> {
+        self.backup_targets.iter().map(|v| v.as_ref()).collect()
+    }
+
     /// Add additional backup target
     pub fn register_backup_target(&mut self, path: PathBuf) {
-        self.backup_targets.push(path);
+        self.backup_targets.push(Cow::Owned(path));
+    }
+
+    /// Mark job as successful.
+    fn set_successfull(&mut self) {
+        self.success = true;
     }
 }
 
