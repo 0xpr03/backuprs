@@ -56,8 +56,9 @@ Backups are run in the specified intervalls and time frame, the time frame has p
 User supplied commands can be invoked via pre-/post-backup commands.
 The following environment variables are passed:
 - `BACKUPRS_JOB_NAME` The current jobs name
-- `BACKUPRS_TARGETS` Paths for backup 
-- `BACKUPRS_TEMP_FOLDER` a temporary folder that is deleted when the backup is finished (on failure and success). This folder is also used for database backups.
+- `BACKUPRS_TARGETS` Paths for backup, delimited by `;`
+- `BACKUPRS_EXCLUDES` Exclude paths for backup, delimited by `;`
+- `BACKUPRS_TEMP_FOLDER` path to a temporary folder that is deleted when the backup is finished (on failure and success). This folder is also used for database backups.
 - `BACKUPRS_SUCCESS` whether the backup succeeded in running, this is only relevant for post commands with `post_command_on_failure` set. And always set true for pre commands.
 Note that the full environment of backups is passed to the commands.
 If `post_command_on_failure` is set, commands are run even when the backup fails.

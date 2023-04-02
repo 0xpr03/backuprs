@@ -289,10 +289,15 @@ impl Job {
                 acc.push(path);
                 acc
             });
+        let excludes = self
+            .data
+            .excludes
+            .join(";");
         let output = Command::new(&command.command)
             .args(&command.args)
             .env("BACKUPRS_TEMP_FOLDER", path)
             .env("BACKUPRS_TARGETS", targets)
+            .env("BACKUPRS_EXCLUDES", excludes)
             .env("BACKUPRS_JOB_NAME", self.name())
             .env("BACKUPRS_SUCCESS", success.to_string())
             .output()
