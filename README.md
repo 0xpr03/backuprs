@@ -51,6 +51,8 @@ For MySQL it is the same story as for Postgres: You need to have the database du
 
 Backups are run in the specified intervalls and time frame, the time frame has priority over the interval.
 
+### Pre and Post commands
+
 User supplied commands can be invoked via pre-/post-backup commands.
 The following environment variables are passed:
 - `BACKUPRS_JOB_NAME` The current jobs name
