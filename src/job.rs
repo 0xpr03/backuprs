@@ -9,7 +9,6 @@ use std::ffi::OsString;
 use std::fmt::Display;
 use std::io::BufRead;
 use std::io::BufReader;
-use std::io::Stderr;
 use std::path::{Path, PathBuf};
 use std::process::ChildStderr;
 use std::process::Command;
@@ -260,16 +259,21 @@ impl Job {
             context.register_backup_target(dumb_path);
         }
         if let Some(command_data) = &self.data.pre_command {
-            self.run_user_command(context, command_data, "pre-command")?;
+            self.run_user_command(context, command_data, "pre-command", true)?;
         }
         Ok(())
     }
 
+    /// Run user command.
+    ///
+    /// - `err_naming` Name of the command for error reporting purposes (`pre-command`)
+    /// - `success` passed to the command as environment variable
     fn run_user_command(
         &self,
         context: &mut BackupContext,
         command: &CommandData,
         err_naming: &'static str,
+        success: bool,
     ) -> Result<()> {
         let path = context.temp_dir()?;
 
@@ -287,8 +291,10 @@ impl Job {
             });
         let output = Command::new(&command.command)
             .args(&command.args)
-            .env("TEMP_FOLDER", path)
-            .env("BACKUP_TARGETS", targets)
+            .env("BACKUPRS_TEMP_FOLDER", path)
+            .env("BACKUPRS_TARGETS", targets)
+            .env("BACKUPRS_JOB_NAME", self.name())
+            .env("BACKUPRS_SUCCESS", success.to_string())
             .output()
             .into_diagnostic()
             .wrap_err_with(|| format!("spawning {err_naming}"))?;
@@ -307,7 +313,7 @@ impl Job {
     fn run_post_jobs(&self, context: &mut BackupContext) -> Result<()> {
         if let Some(command_data) = &self.data.post_command {
             if self.data.post_command_on_failure || context.success {
-                self.run_user_command(context, command_data, "post-command")?;
+                self.run_user_command(context, command_data, "post-command", context.success)?;
             }
         }
         Ok(())
