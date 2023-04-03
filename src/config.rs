@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
@@ -58,10 +59,14 @@ pub struct Global {
     pub mysql_dumb_binary: Option<PathBuf>,
     /// Postgres Dumb Path
     pub postgres_dumb_binary: Option<PathBuf>,
+    /// Path for folder used for DB backups
+    pub scratch_dir: PathBuf,
     #[serde(default)]
     pub verified_mysql_binary: Cell<bool>,
     #[serde(default)]
     pub verified_postgres_binary: Cell<bool>,
+    #[serde(default)]
+    pub stats: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +99,9 @@ impl Global {
         }
         if !self.restic_binary.is_file() {
             bail!("Path for config value 'restic_binary' is not a file!");
+        }
+        if !self.scratch_dir.is_dir() {
+            bail!("Path for config value 'scratch_dir' is not an existing folder!");
         }
         if let Some(period) = &self.period {
             if period.backup_start_time == period.backup_end_time {
@@ -162,16 +170,30 @@ impl Global {
             Command::new(cmd)
         }
     }
-    pub fn postgres_cmd_base(&self) -> Command {
-        if let Some(path) = &self.postgres_dumb_binary {
-            Command::new(path)
-        } else {
-            #[cfg(target_os = "windows")]
-            let cmd = "pg_dumb.exe";
-            #[cfg(not(target_os = "windows"))]
-            let cmd = "pg_dumb";
-
-            Command::new(cmd)
+    pub fn postgres_cmd_base(&self, sudo: bool) -> Result<Command> {
+        let binary = match &self.postgres_dumb_binary {
+            Some(path) => path.as_os_str(),
+            None => {
+                #[cfg(target_os = "windows")]
+                {
+                    OsStr::new("pg_dumb.exe")
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    OsStr::new("pg_dumb")
+                }
+            }
+        };
+        match sudo {
+            true => {
+                #[cfg(target_os = "windows")]
+                bail!("PostgreSQL user change (sudo) not supported on windows!");
+                #[cfg(not(target_os = "windows"))]
+                {
+                    Ok(Command::new("sudo").arg("-u").arg("postgres").arg(binary))
+                }
+            }
+            false => Ok(Command::new(binary)),
         }
     }
 }
@@ -215,7 +237,7 @@ pub struct JobData {
     /// MySQL database name to backup
     pub mysql_db: Option<String>,
     /// Postgres database name to backup
-    pub postgres_db: Option<String>,
+    pub postgres_db: Option<PostgresData>,
 }
 
 /// Pre/Post user supplied command
@@ -224,4 +246,12 @@ pub struct CommandData {
     pub command: String,
     pub args: Vec<String>,
     pub workdir: PathBuf,
+}
+#[derive(Debug, Deserialize)]
+pub struct PostgresData {
+    #[serde(default)]
+    pub change_user: bool,
+    pub password: Option<String>,
+    pub user: Option<String>,
+    pub database: String,
 }

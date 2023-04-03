@@ -6,7 +6,6 @@ use std::{
 
 use clap::{Parser, Subcommand};
 use config::{Conf, Global};
-use job::Job;
 use miette::{bail, Context, IntoDiagnostic, Result};
 use time::{OffsetDateTime, Time};
 
@@ -22,6 +21,9 @@ struct Cli {
     /// Verbose output
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
+    /// Statistic output
+    #[arg(short, long, default_value_t = false)]
+    no_stats: bool,
     #[command(subcommand)]
     command: Commands,
 }
@@ -66,6 +68,9 @@ fn main() -> Result<()> {
     let mut config = read_config().wrap_err("Reading configuration")?;
     if cli.verbose {
         config.global.verbose = true;
+    }
+    if cli.no_stats {
+        config.global.stats = false;
     }
 
     config.global.check()?;
@@ -143,7 +148,7 @@ fn main() -> Result<()> {
             // println!("Backup starting time is {}",defaults.backup_start_time);
             for (_, job) in jobs.iter_mut() {
                 match job.update_last_run() {
-                    Ok(v) => {
+                    Ok(_) => {
                         let next_run = job.next_run()?;
                         println!(
                         "[{}]\tJob ok, found snapshots, last backup {}, next backup would be at {}",
@@ -175,8 +180,8 @@ fn main() -> Result<()> {
             }
             let mut jobs: Vec<_> = jobs
                 .into_values()
-                .map(|mut v| {
-                    v.snapshots(Some(1));
+                .map(|v| {
+                    let _ = v.snapshots(Some(1));
                     v
                 })
                 .collect();
@@ -200,7 +205,7 @@ fn main() -> Result<()> {
                         std::thread::sleep(sleep_time.try_into().into_diagnostic()?);
                     }
                     match job.backup() {
-                        Ok(s) => (),
+                        Ok(_) => (),
                         Err(e) => {
                             eprintln!("[{}]\tFailed to backup.", job.name());
                             return Err(e);

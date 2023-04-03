@@ -14,7 +14,6 @@ miette = {version = "5.5.0", features = ["fancy"]}
 serde_json = "1"
 thiserror = "1"
 time = { version = "0.3.20", features = ["serde-well-known","local-offset","std", "parsing"] }
-temp-dir = "0.1.11"
 
 [profile.release]
 lto = "thin"

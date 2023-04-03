@@ -16,7 +16,6 @@ use std::process::ExitStatus;
 use std::process::Output;
 use std::process::Stdio;
 use std::rc::Rc;
-use temp_dir::TempDir;
 use time::{Duration, OffsetDateTime};
 
 use crate::config::{self, JobData};
@@ -43,14 +42,14 @@ impl Job {
             last_run: Cell::new(None),
             next_run: Cell::new(None),
         };
-        job.verify()?;
+        // job.verify()?;
         Ok(job)
     }
 
-    fn verify(&self) -> Result<()> {
-        // unused
-        Ok(())
-    }
+    // fn verify(&self) -> Result<()> {
+    //     // unused
+    //     Ok(())
+    // }
 
     /// Time of last backup run
     pub fn last_run(&self) -> Option<OffsetDateTime> {
@@ -104,7 +103,7 @@ impl Job {
     }
 
     fn inner_backup(&self, dry_run: bool) -> Result<BackupSummary> {
-        let mut context = BackupContext::new(&self.data);
+        let mut context = BackupContext::new(&self.data, &self.globals.scratch_dir);
         let res = self._inner_backup(&mut context, dry_run);
         if let Err(e) = self.run_post_jobs(&mut context) {
             // don't overwrite the backup error
@@ -114,6 +113,7 @@ impl Job {
                 return Err(e);
             }
         }
+        drop(context);
         res
     }
 
@@ -151,8 +151,13 @@ impl Job {
             .ok_or_else(|| miette!("Could not capture standard output."))?;
         let bufreader = BufReader::new(stdout);
 
-        let verbose = self.verbose(); // cache, no Rc overhead
+        // cache, no Rc overhead
+        let verbose = self.verbose();
+        let stats = self.globals.stats;
+        let name = self.name();
+
         let mut backup_summary: Option<BackupSummary> = None;
+        let mut last_progress = 0;
 
         for line in bufreader.lines().filter_map(|l| l.ok()) {
             let line = line.trim();
@@ -162,20 +167,38 @@ impl Job {
                 BackupMessage::VerboseStatus(v) => {
                     if dry_run || verbose {
                         match v.action.as_str() {
-                            "unchanged" => println!("[{}]\tUnchanged \"{}\"", self.name(), v.item),
+                            "unchanged" => println!("[{}]\tUnchanged \"{}\"", name, v.item),
                             "new" => {
                                 let (unit, size) = format_size(v.data_size);
-                                println!("[{}]\tNew \"{}\" {} {}", self.name(), v.item, size, unit);
+                                println!("[{}]\tNew \"{}\" {} {}", name, v.item, size, unit);
                             }
                             "changed" => {
                                 let (unit, size) = format_size(v.data_size);
-                                println!("[{}]\tNew \"{}\" {} {}", self.name(), v.item, size, unit);
+                                println!("[{}]\tNew \"{}\" {} {}", name, v.item, size, unit);
                             }
                             v => eprintln!("Unknown restic action '{}'", v),
                         }
                     }
                 }
-                BackupMessage::Status(_) => (),
+                BackupMessage::Status(status) => {
+                    if stats {
+                        match status {
+                            BackupStatus::Finish(_) => (),
+                            BackupStatus::Intermediate(s) => {
+                                let percent: i32 = (s.percent_done * 100.0) as _;
+                                if percent != last_progress {
+                                    last_progress = percent;
+                                    println!(
+                                        "[{}]\tBackup {}% finished, {} files finished",
+                                        self.name(),
+                                        percent,
+                                        s.files_done
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
                 BackupMessage::Summary(s) => {
                     backup_summary = Some(s);
                 }
@@ -209,16 +232,19 @@ impl Job {
 
     fn run_pre_jobs(&self, context: &mut BackupContext) -> Result<()> {
         if let Some(mysql_db) = self.data.mysql_db.as_deref() {
+            if self.verbose() {
+                println!("[{}] Starting mysql dumb", self.name());
+            }
             let path = context.temp_dir()?;
             let dumb_path = path.join("db_dumb_mysql.sql");
-            let mut arg = OsString::from("--result-file=");
-            arg.push(&dumb_path);
+            let mut args_output = OsString::from("--result-file=");
+            args_output.push(&dumb_path);
 
             let output = self
                 .globals
                 .mysql_cmd_base()
                 .args(["--databases", mysql_db])
-                .arg(arg)
+                .arg(args_output)
                 .output()
                 .into_diagnostic()
                 .wrap_err("Starting mysqldumb")?;
@@ -233,17 +259,33 @@ impl Job {
             }
             context.register_backup_target(dumb_path);
         }
-        if let Some(postgres_db) = self.data.postgres_db.as_deref() {
+        if let Some(postgres_db) = &self.data.postgres_db {
+            if self.verbose() {
+                println!("[{}] Starting postgres dumb", self.name());
+            }
             let path = context.temp_dir()?;
             let dumb_path = path.join("db_dumb_postgres.sql");
-            let mut arg = OsString::from("--file=");
-            arg.push(&dumb_path);
+            let mut args_output = OsString::from("--file=");
+            args_output.push(&dumb_path);
 
-            let output = self
-                .globals
-                .mysql_cmd_base()
-                .arg(arg)
-                .arg(postgres_db)
+            let mut cmd = self.globals.postgres_cmd_base(postgres_db.change_user)?;
+
+            if let Some(user) = postgres_db.user.as_deref() {
+                cmd.env("PGUSER", user);
+            }
+            if let Some(password) = postgres_db.password.as_deref() {
+                // TODO: only safe on linux ?
+                cmd.env("PGPASSWORD", password);
+            }
+
+            cmd.arg(args_output)
+                // has to be last
+                .arg(&postgres_db.database);
+
+            if self.verbose() {
+                println!("[{}] CMD: {:?}", self.name(), cmd);
+            }
+            let output = cmd
                 .output()
                 .into_diagnostic()
                 .wrap_err("Starting pg_dumb")?;
@@ -289,10 +331,7 @@ impl Job {
                 acc.push(path);
                 acc
             });
-        let excludes = self
-            .data
-            .excludes
-            .join(";");
+        let excludes = self.data.excludes.join(";");
         let output = Command::new(&command.command)
             .args(&command.args)
             .env("BACKUPRS_TEMP_FOLDER", path)
@@ -527,20 +566,33 @@ struct BackupContext<'a> {
     /// temporary directory to be used for additional operations
     ///
     /// Not backed up, but removed on job end
-    temp_dir: Option<TempDir>,
+    temp_dir: Option<PathBuf>,
     /// Whether this job has had no errors.
     /// Used for post-command evaluation.
     success: bool,
     /// additional backup targets
     backup_targets: Vec<Cow<'a, Path>>,
+    /// Base for creating a temporary directory
+    temp_dir_base: &'a Path,
+    job: &'a JobData,
+}
+
+impl Drop for BackupContext<'_> {
+    fn drop(&mut self) {
+        if let Some(path) = &self.temp_dir {
+            std::fs::remove_dir_all(path).unwrap();
+        }
+    }
 }
 
 impl<'a> BackupContext<'a> {
-    pub fn new(job: &'a JobData) -> Self {
+    pub fn new(job: &'a JobData, temp_dir_base: &'a Path) -> Self {
         let mut context = Self {
             temp_dir: None,
             success: false,
             backup_targets: Vec::with_capacity(2),
+            temp_dir_base,
+            job,
         };
         let mut paths: Vec<Cow<'a, Path>> = job
             .paths
@@ -555,10 +607,27 @@ impl<'a> BackupContext<'a> {
     pub fn temp_dir(&mut self) -> Result<&Path> {
         // TODO: use get_or_insert_default when stabilized
         // self.temp_dir.get_or_insert_default().path()
-        if let None = self.temp_dir {
-            self.temp_dir = Some(TempDir::new().into_diagnostic()?);
+        if let None = self.temp_dir.as_deref() {
+            let path = self
+                .temp_dir_base
+                .join(format!("{}_scratchspace", self.job.name));
+            if path.exists() {
+                if !path.is_dir() {
+                    bail!(
+                        "Creating temporary scratchspace directory at {} failed, already a file?!",
+                        path.display()
+                    );
+                }
+            } else {
+                std::fs::create_dir_all(&path)
+                    .into_diagnostic()
+                    .wrap_err_with(|| {
+                        format!("Creating scratchspace directory at {}", path.display())
+                    })?;
+            }
+            self.temp_dir = Some(path);
         }
-        Ok(self.temp_dir.as_ref().unwrap().path())
+        Ok(self.temp_dir.as_deref().unwrap())
     }
 
     pub fn backup_paths(&self) -> Vec<&Path> {

@@ -17,6 +17,15 @@ Options:
   -V, --version  Print version
 ```
 
+## Features
+
+- Multiple restic backups jobs with different configurations
+- **only** [Rest-Server](https://github.com/restic/rest-server) backends are currently supported
+- Timeframe where all backups are allowed to run
+- Interval for each backup job
+- Pre- and Post-Backup commands
+- Mysql and PostgreSQL backup support
+
 ## Installation
 
 This section covers the installation.
@@ -39,13 +48,27 @@ See below for more information of specific parts of the configuration.
 
 To run backups, [restic](https://restic.readthedocs.io/en/stable/020_installation.html) itself is required. You can specify the binary path in the configuration.
 
+### scratch_dir
+
+The `scratch_dir` path should point towards a directory which can be used freely by backuprs when performing postgres dumbs. It is also handed towards user provided post/pre-commands run.
+
+The technical background is to use a static path for restic when backing up databases dumbs. Using temporary, unique folders (for example in `/tmp`) would prevent incremental backups of database dumbs, resulting in a full new file per backup.
+
 ### Postgres Dumbs
 
 If you want to perform postgres backups, you can install the postgres dumb tool `pg_dump`. To use it, you have to specify the path towards the binary in your configuration. On Windows you may find it inside `C:\Program Files\PostgreSQL\XX\bin`. On Linux you can install the `postgresql-client` package.
 
+For authentication you can either tell backuprs to switch the user (requires `sudo`), or use a password:
+```toml
+postgres_db = { database = "database", change_user = false, user = "user", password = "password" }
+```
+You can leave options blank which you don't want to use, except for `database`.
+
 ### MySQL Dumbs
 
 For MySQL it is the same story as for Postgres: You need to have the database dumb binary installed and a path in your configuration.
+
+Instead of using user/pasword for login, you can only specify the database name, and mysql expectes a [.my.cnf](https://dev.mysql.com/doc/refman/8.0/en/option-files.html) in the backuprs home folder, which contains the login data
 
 ## Configuration
 
