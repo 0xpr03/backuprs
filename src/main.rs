@@ -21,9 +21,9 @@ struct Cli {
     /// Verbose output
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
-    /// Statistic output
+    /// Disable progress output for backups.
     #[arg(short, long, default_value_t = false)]
-    no_stats: bool,
+    no_progress: bool,
     #[command(subcommand)]
     command: Commands,
 }
@@ -69,8 +69,8 @@ fn main() -> Result<()> {
     if cli.verbose {
         config.global.verbose = true;
     }
-    if cli.no_stats {
-        config.global.stats = false;
+    if cli.no_progress {
+        config.global.progress = false;
     }
 
     config.global.check()?;

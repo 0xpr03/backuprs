@@ -1,6 +1,6 @@
 # Restic backup manager
 
-Perform multiple backup jobs for different repositories and users towards a restic-server.
+Perform multiple [restic](https://restic.net/) backup jobs for different repositories and users towards a restic-server.
 
 ```text
 Usage: backuprs.exe [OPTIONS] <COMMAND>
@@ -12,9 +12,10 @@ Commands:
   help    Print this message or the help of the given subcommand(s)
 
 Options:
-  -v, --verbose  Verbose output
-  -h, --help     Print help
-  -V, --version  Print version
+  -v, --verbose      Verbose output
+  -n, --no-progress  Disable progress output for backups
+  -h, --help         Print help
+  -V, --version      Print version
 ```
 
 ## Features
@@ -35,6 +36,7 @@ This section covers the installation.
 - Install [rust](https://www.rust-lang.org/tools/install)
 - Build the application via `cargo build --release`
 - The final binary is inside `target/release/`. You can also run `cargo run --release` to invoke it.
+- On Linux copy the binary to a secure location, and change the owners, such that it can't be modified by anyone other than root.
 
 ### Configuration
 
@@ -50,13 +52,13 @@ To run backups, [restic](https://restic.readthedocs.io/en/stable/020_installatio
 
 ### scratch_dir
 
-The `scratch_dir` path should point towards a directory which can be used freely by backuprs when performing postgres dumbs. It is also handed towards user provided post/pre-commands run.
+The `scratch_dir` path should point towards a directory which can be used freely by backuprs when performing database backups. It is also handed towards user provided post/pre-commands run.
 
-The technical background is to use a static path for restic when backing up databases dumbs. Using temporary, unique folders (for example in `/tmp`) would prevent incremental backups of database dumbs, resulting in a full new file per backup.
+The technical background is to use a static path for restic when backing up databases. Using temporary, unique folders (for example in `/tmp`), would prevent incremental backups of database dumps, resulting in a full new file per backup run.
 
-### Postgres Dumbs
+### Postgres Backups
 
-If you want to perform postgres backups, you can install the postgres dumb tool `pg_dump`. To use it, you have to specify the path towards the binary in your configuration. On Windows you may find it inside `C:\Program Files\PostgreSQL\XX\bin`. On Linux you can install the `postgresql-client` package.
+If you want to perform postgres backups, you can install the postgres dump tool `pg_dump`. To use it, you have to specify the path towards the binary in your configuration. On Windows you may find it inside `C:\Program Files\PostgreSQL\XX\bin`. On Linux you can install the `postgresql-client` package.
 
 For authentication you can either tell backuprs to switch the user (requires `sudo`), or use a password:
 ```toml
@@ -64,15 +66,15 @@ postgres_db = { database = "database", change_user = false, user = "user", passw
 ```
 You can leave options blank which you don't want to use, except for `database`.
 
-### MySQL Dumbs
+### MySQL Backups
 
-For MySQL it is the same story as for Postgres: You need to have the database dumb binary installed and a path in your configuration.
+For MySQL it is the same story as for Postgres: You need to have the database dump binary installed and the path in your configuration.
 
-Instead of using user/pasword for login, you can only specify the database name, and mysql expectes a [.my.cnf](https://dev.mysql.com/doc/refman/8.0/en/option-files.html) in the backuprs home folder, which contains the login data
+Instead of using user/pasword for login, you can only specify the database name, and mysql expectes a [.my.cnf](https://dev.mysql.com/doc/refman/8.0/en/option-files.html) in the backuprs home folder, which contains the login data.
 
 ## Configuration
 
-Backups are run in the specified intervalls and time frame, the time frame has priority over the interval.
+Backups are run in specified intervalls and time frame, the time frame has priority over the interval.
 
 ### Pre and Post commands
 

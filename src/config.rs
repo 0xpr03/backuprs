@@ -66,7 +66,7 @@ pub struct Global {
     #[serde(default)]
     pub verified_postgres_binary: Cell<bool>,
     #[serde(default)]
-    pub stats: bool,
+    pub progress: bool,
 }
 
 #[derive(Debug, Deserialize)]

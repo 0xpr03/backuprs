@@ -153,7 +153,7 @@ impl Job {
 
         // cache, no Rc overhead
         let verbose = self.verbose();
-        let stats = self.globals.stats;
+        let stats = self.globals.progress;
         let name = self.name();
 
         let mut backup_summary: Option<BackupSummary> = None;
