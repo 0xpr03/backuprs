@@ -190,7 +190,9 @@ impl Global {
                 bail!("PostgreSQL user change (sudo) not supported on windows!");
                 #[cfg(not(target_os = "windows"))]
                 {
-                    Ok(Command::new("sudo").arg("-u").arg("postgres").arg(binary))
+                    let mut command = Command::new("sudo");
+                    command.arg("-u").arg("postgres").arg(binary);
+                    Ok(command)
                 }
             }
             false => Ok(Command::new(binary)),
