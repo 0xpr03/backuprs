@@ -1,0 +1,30 @@
+[Unit]
+Description=backuprs Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+#ExecStart=/home/backuprs/bin/backuprs -v test
+ExecStart=/home/backuprs/bin/backuprs run
+WorkingDirectory=/home/backuprs
+Nice=4
+#Restart=on-failure
+Restart=never
+User=backuprs
+Group=backuprs
+
+PrivateDevices=yes
+PrivateTmp=yes
+ReadOnlyPaths=/
+ReadWritePaths=/home/backuprs/.cache /home/backuprs/scratchspace /tmp
+NoExecPaths=/
+ExecPaths=/usr/lib /usr/lib64 /home/backuprs/bin
+ProtectHome=no
+
+SystemCallFilter=@system-service
+# Allow read everywhere
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+
+[Install]
+WantedBy=multi-user.target
