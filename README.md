@@ -3,7 +3,7 @@
 Perform multiple [restic](https://restic.net/) backup jobs for different repositories and users towards a restic-server.
 
 ```text
-Usage: backuprs.exe [OPTIONS] <COMMAND>
+Usage: backuprs [OPTIONS] <COMMAND>
 
 Commands:
   test    Test config or perform dry-runs
@@ -16,6 +16,35 @@ Options:
   -n, --no-progress  Disable progress output for backups
   -h, --help         Print help
   -V, --version      Print version
+```
+
+```text
+Force run all or one backup job
+
+Usage: backuprs run [OPTIONS]
+
+Options:
+  -j, --job <JOB>       Run specific job by name
+  -a, --abort-on-error  Abort on first error, stops any further jobs
+  -h, --help            Print help
+```
+
+```text
+Test config or perform dry-runs
+
+Usage: backuprs test [OPTIONS]
+
+Options:
+      --dry-run
+          Dry run, do not perform backup, only print what would happen.
+          
+          Equals `restic backup --dry-run`. Requires job argument.
+
+  -j, --job <JOB>
+          Test specific job by name
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 ## Features
