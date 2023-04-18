@@ -191,26 +191,27 @@ fn main() -> Result<()> {
             loop {
                 jobs.sort_unstable_by(|a, b| b.next_run().unwrap().cmp(&a.next_run().unwrap()));
 
-                if let Some(period) = &defaults.period {
-                    let now = OffsetDateTime::now_local().into_diagnostic()?;
-                    if let Some(duration) =
-                        calc_period_sleep(period.backup_start_time, period.backup_end_time, now)
-                    {
-                        if defaults.verbose {
-                            println!("Waiting for backup start time");
-                        }
-                        std::thread::sleep(duration.try_into().into_diagnostic()?);
-                    }
-                }
-
                 if let Some(mut job) = jobs.pop() {
                     let now = OffsetDateTime::now_local().into_diagnostic()?;
                     let sleep_time = job.next_run()? - now;
+                    // job interval
                     if sleep_time.is_positive() {
                         if defaults.verbose {
                             println!("Waiting for cooldown time of job [{}]",job.name());
                         }
                         std::thread::sleep(sleep_time.try_into().into_diagnostic()?);
+                    }
+                    // backup window
+                    if let Some(period) = &defaults.period {
+                        let now = OffsetDateTime::now_local().into_diagnostic()?;
+                        if let Some(duration) =
+                            calc_period_sleep(period.backup_start_time, period.backup_end_time, now)
+                        {
+                            if defaults.verbose {
+                                println!("Waiting for backup start time");
+                            }
+                            std::thread::sleep(duration.try_into().into_diagnostic()?);
+                        }
                     }
                     match job.backup() {
                         Ok(_) => (),
