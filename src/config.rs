@@ -43,9 +43,13 @@ pub type Defaults = Rc<Global>;
 
 #[derive(Debug, Deserialize)]
 pub struct Global {
-    /// Repository backend and defaults
-    #[serde(flatten)]
-    pub backend: RepositoryData,
+    // Repository backends and defaults
+    /// Rest backend defaults
+    pub rest: Option<RestRepository>,
+    /// SFTP backend defaults
+    pub sftp: Option<SftpRepository>,
+    /// S3 backend defaults
+    pub s3: Option<S3Repository>,
     /// Path to restic binary
     pub restic_binary: PathBuf,
     /// Verbose output, passed via CLI params
@@ -118,29 +122,21 @@ impl Global {
                 bail!("Path for config value 'postgres_dumb_binary' is not an exsiting file!");
             }
         }
-        match &self.backend {
-            RepositoryData::Rest {
-                rest_url: _,
-                server_pubkey_file,
-            } => {
-                if let Some(pubkey_file) = server_pubkey_file {
-                    if !pubkey_file.exists() {
-                        bail!("Rest 'server_pubkey_file' specified, but file does not exist?");
-                    }
-                    std::fs::File::open(&pubkey_file)
-                        .into_diagnostic()
-                        .wrap_err("Rest 'server_pubkey_file' specified, but can't read file?")?;
+        if let Some(RestRepository { rest_url, server_pubkey_file }) = &self.rest {
+            if let Some(pubkey_file) = server_pubkey_file {
+                if !pubkey_file.exists() {
+                    bail!("Rest 'server_pubkey_file' specified, but file does not exist?");
                 }
+                std::fs::File::open(&pubkey_file)
+                    .into_diagnostic()
+                    .wrap_err("Rest 'server_pubkey_file' specified, but can't read file?")?;
             }
         }
         Ok(())
     }
     pub fn repo_url(&self, job: &JobData) -> String {
-        match &self.backend {
-            RepositoryData::Rest {
-                rest_url: restic_url,
-                server_pubkey_file,
-            } => {
+        match job.backend {
+            JobBackend::Restic(ResticJobData { restic_user, restic_password }) => {
                 let mut url = String::from("rest:");
                 if server_pubkey_file.is_some() {
                     url.push_str("https://");
@@ -200,16 +196,45 @@ impl Global {
     }
 }
 
+// #[derive(Debug, Deserialize)]
+// pub enum RepositoryData {
+//     /// Restic rest-server backend
+//     Rest {
+//         /// Repostiroy URL of the rest server.
+//         /// Does not contain the repo or user/password.
+//         rest_url: String,
+//         /// Pubkey for the server when HTTPS is used.
+//         server_pubkey_file: Option<PathBuf>,
+//     },
+// }
+
 #[derive(Debug, Deserialize)]
-pub enum RepositoryData {
-    /// Restic rest-server backend
-    Rest {
-        /// Repostiroy URL of the rest server.
-        /// Does not contain the repo or user/password.
-        rest_url: String,
-        /// Pubkey for the server when HTTPS is used.
-        server_pubkey_file: Option<PathBuf>,
-    },
+/// Defaults for rest backend
+pub struct RestRepository {
+    /// Repostiroy URL of the rest server.
+    /// Does not contain the repo or user/password.
+    rest_url: String,
+    /// Pubkey for the server when HTTPS is used.
+    server_pubkey_file: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+/// Defaults for S3 backend
+pub struct S3Repository {
+    /// Host URL of the rest server.
+    /// Does not contain the bucket or user/password.
+    s3_host: String,
+}
+
+#[derive(Debug, Deserialize)]
+/// Defaults for rest backend
+pub struct SftpRepository {
+    /// Host URL of the sftp server.
+    /// Does not contain the repo or user/password!
+    sftp_host: String,
+    /// Command for connecting.
+    /// For `-o sftp.command="ssh -p 22 u1234@u1234.example.com -s sftp"`
+    sftp_command: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -222,12 +247,11 @@ pub struct JobData {
     pub paths: Vec<PathBuf>,
     /// Exclude items see [restic docs](https://restic.readthedocs.io/en/latest/040_backup.html#excluding-files)
     pub excludes: Vec<String>,
-    /// Repository/Bucket
+    /// Repository / Bucket
     pub repository: String,
-    /// Login user
-    pub user: String,
-    /// Password for user
-    pub password: String,
+    /// Job Backend data
+    #[serde(flatten)]
+    pub backend: JobBackend,
     /// Encryption key
     pub repository_key: String,
     /// Command to run post backup
@@ -249,6 +273,7 @@ pub struct CommandData {
     pub args: Vec<String>,
     pub workdir: PathBuf,
 }
+/// Postgres backup data
 #[derive(Debug, Deserialize)]
 pub struct PostgresData {
     #[serde(default)]
@@ -256,4 +281,43 @@ pub struct PostgresData {
     pub password: Option<String>,
     pub user: Option<String>,
     pub database: String,
+}
+
+/// Per job backend
+#[derive(Debug, Deserialize)]
+pub enum JobBackend {
+    S3(S3JobData),
+    Restic(ResticJobData),
+    SFTP(SftpJobData)
+}
+
+/// Per job s3-backend data
+#[derive(Debug, Deserialize)]
+pub struct S3JobData {
+    aws_access_key_id: String,
+    aws_secret_access_key: String,
+}
+
+/// Per job restic-backend data
+#[derive(Debug, Deserialize)]
+pub struct ResticJobData {
+    restic_user: String,
+    restic_password: String,
+}
+
+/// Per job sftp-backend data
+#[derive(Debug, Deserialize)]
+pub struct SftpJobData {
+    sftp_user: String,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = include_str!("../config.toml.example");
+        let _config: Conf = toml::from_str(config).unwrap();
+    }
 }

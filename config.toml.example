@@ -1,8 +1,6 @@
 # Rename this to config.toml
 
 [global]
-# Pubkey of restic server
-restic_key = "<CHANGE ME>"
 # Path to restic binary
 restic_binary = "C:/restic_0.15.1_windows_amd64/restic_0.15.1_windows_amd64.exe"
 # Default intervall for jobs in minutes
@@ -27,8 +25,18 @@ scratch_dir = "scratchdir"
 [global.Rest]
 # URL for rest server to use for all jobs
 # only domain:port or ip:port
-rest_url = "example.com:443"
+rest_host = "example.com:443"
+# Pubkey of restic server
 server_pubkey_file = "C:/Users/Foo/pub_key"
+
+# SFTP as backend
+[global.SFTP]
+# URL for rest server to use for all jobs
+# only domain:port or ip:port
+sftp_host = "example.com:443"
+# Optional command for connecting with special settings.
+# For restic option `-o sftp.command="ssh -p 22 u1234@u1234.example.com -s sftp"`
+sftp_command = "ssh -p 22 u1234@u1234.example.com -s sftp"
 
 # All backup jobs, start each one with [[jobs]]
 [[job]]
