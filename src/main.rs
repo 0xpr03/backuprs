@@ -178,6 +178,7 @@ fn main() -> Result<()> {
             if jobs.is_empty() {
                 bail!("No backup jobs configured!");
             }
+            println!("Loading job snapshots");
             let mut jobs: Vec<_> = jobs
                 .into_values()
                 .map(|v| {
@@ -185,23 +186,30 @@ fn main() -> Result<()> {
                     v
                 })
                 .collect();
-
+            
+            println!("Entering daemon mode");
             loop {
-                jobs.sort_unstable_by(|a, b| a.next_run().unwrap().cmp(&b.next_run().unwrap()));
+                jobs.sort_unstable_by(|a, b| b.next_run().unwrap().cmp(&a.next_run().unwrap()));
 
                 if let Some(period) = &defaults.period {
                     let now = OffsetDateTime::now_local().into_diagnostic()?;
                     if let Some(duration) =
                         calc_period_sleep(period.backup_start_time, period.backup_end_time, now)
                     {
+                        if defaults.verbose {
+                            println!("Waiting for backup start time");
+                        }
                         std::thread::sleep(duration.try_into().into_diagnostic()?);
                     }
                 }
 
-                while let Some(mut job) = jobs.pop() {
+                if let Some(mut job) = jobs.pop() {
                     let now = OffsetDateTime::now_local().into_diagnostic()?;
                     let sleep_time = job.next_run()? - now;
                     if sleep_time.is_positive() {
+                        if defaults.verbose {
+                            println!("Waiting for cooldown time of job [{}]",job.name());
+                        }
                         std::thread::sleep(sleep_time.try_into().into_diagnostic()?);
                     }
                     match job.backup() {
