@@ -4,13 +4,14 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
 
-use miette::{bail, Result};
+use miette::{bail, Result, miette};
 use miette::{Context, IntoDiagnostic};
 use serde::de;
 use serde::Deserialize;
 use serde::Deserializer;
 use time::format_description;
 
+use crate::error::{ComRes, CommandError};
 use crate::job::Job;
 use crate::job::JobMap;
 
@@ -122,7 +123,7 @@ impl Global {
                 bail!("Path for config value 'postgres_dumb_binary' is not an exsiting file!");
             }
         }
-        if let Some(RestRepository { rest_url, server_pubkey_file }) = &self.rest {
+        if let Some(RestRepository { rest_host: rest_url, server_pubkey_file }) = &self.rest {
             if let Some(pubkey_file) = server_pubkey_file {
                 if !pubkey_file.exists() {
                     bail!("Rest 'server_pubkey_file' specified, but file does not exist?");
@@ -133,26 +134,6 @@ impl Global {
             }
         }
         Ok(())
-    }
-    pub fn repo_url(&self, job: &JobData) -> String {
-        match job.backend {
-            JobBackend::Restic(ResticJobData { restic_user, restic_password }) => {
-                let mut url = String::from("rest:");
-                if server_pubkey_file.is_some() {
-                    url.push_str("https://");
-                } else {
-                    url.push_str("http://");
-                }
-                url.push_str(&job.user);
-                url.push_str(":");
-                url.push_str(&job.password);
-                url.push_str("@");
-                url.push_str(&restic_url);
-                url.push_str("/");
-                url.push_str(&job.repository);
-                url
-            }
-        }
     }
     pub fn mysql_cmd_base(&self) -> Command {
         if let Some(path) = &self.mysql_dumb_binary {
@@ -211,11 +192,11 @@ impl Global {
 #[derive(Debug, Deserialize)]
 /// Defaults for rest backend
 pub struct RestRepository {
-    /// Repostiroy URL of the rest server.
+    /// Repostiroy host of the rest server. For example 10.0.0.1:443
     /// Does not contain the repo or user/password.
-    rest_url: String,
+    pub rest_host: String,
     /// Pubkey for the server when HTTPS is used.
-    server_pubkey_file: Option<PathBuf>,
+    pub server_pubkey_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -223,7 +204,7 @@ pub struct RestRepository {
 pub struct S3Repository {
     /// Host URL of the rest server.
     /// Does not contain the bucket or user/password.
-    s3_host: String,
+    pub s3_host: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -231,10 +212,10 @@ pub struct S3Repository {
 pub struct SftpRepository {
     /// Host URL of the sftp server.
     /// Does not contain the repo or user/password!
-    sftp_host: String,
+    pub sftp_host: String,
     /// Command for connecting.
     /// For `-o sftp.command="ssh -p 22 u1234@u1234.example.com -s sftp"`
-    sftp_command: Option<String>,
+    pub sftp_command: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -287,28 +268,30 @@ pub struct PostgresData {
 #[derive(Debug, Deserialize)]
 pub enum JobBackend {
     S3(S3JobData),
-    Restic(ResticJobData),
+    Rest(RestJobData),
     SFTP(SftpJobData)
 }
 
 /// Per job s3-backend data
 #[derive(Debug, Deserialize)]
 pub struct S3JobData {
-    aws_access_key_id: String,
-    aws_secret_access_key: String,
+    pub aws_access_key_id: String,
+    pub aws_secret_access_key: String,
 }
 
-/// Per job restic-backend data
+/// Per job rest-backend data
 #[derive(Debug, Deserialize)]
-pub struct ResticJobData {
-    restic_user: String,
-    restic_password: String,
+pub struct RestJobData {
+    pub rest_user: String,
+    pub rest_password: String,
+    #[serde(flatten)]
+    pub overrides: Option<RestRepository>
 }
 
 /// Per job sftp-backend data
 #[derive(Debug, Deserialize)]
 pub struct SftpJobData {
-    sftp_user: String,
+    pub sftp_user: String,
 }
 
 #[cfg(test)]

@@ -50,9 +50,9 @@ paths = ["C:/Users/Foo"]
 # Exclude items see [restic docs](https://restic.readthedocs.io/en/latest/040_backup.html#excluding-files)
 excludes = []
 # Login user
-user = "<CHANGE ME>"
+rest_user = "<CHANGE ME>"
 # Password for user
-password = "<CHANGE ME>"
+rest_password = "<CHANGE ME>"
 # Encryption key
 repository_key = "<CHANGE ME>"
 # Repository name
