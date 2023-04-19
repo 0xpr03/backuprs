@@ -277,6 +277,8 @@ pub enum JobBackend {
 pub struct S3JobData {
     pub aws_access_key_id: String,
     pub aws_secret_access_key: String,
+    #[serde(flatten)]
+    pub overrides: Option<S3Repository>
 }
 
 /// Per job rest-backend data
@@ -292,6 +294,8 @@ pub struct RestJobData {
 #[derive(Debug, Deserialize)]
 pub struct SftpJobData {
     pub sftp_user: String,
+    #[serde(flatten)]
+    pub overrides: Option<SftpRepository>
 }
 
 #[cfg(test)]
