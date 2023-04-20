@@ -42,14 +42,30 @@ impl Job {
             last_run: Cell::new(None),
             next_run: Cell::new(None),
         };
-        // job.verify()?;
+        job.verify()?;
         Ok(job)
     }
 
-    // fn verify(&self) -> Result<()> {
-    //     // unused
-    //     Ok(())
-    // }
+    fn verify(&self) -> Result<()> {
+        match self.data.backend {
+            config::JobBackend::S3(_) => {
+                if self.globals.s3.is_none() {
+                    bail!("[{}] S3 configured for job but no [global.S3] defaults found!",self.name());
+                }
+            },
+            config::JobBackend::Rest(_) => {
+                if self.globals.rest.is_none() {
+                    bail!("[{}] Rest configured for job but no [global.Rest] defaults found!",self.name());
+                }
+            },
+            config::JobBackend::SFTP(_) => {
+                if self.globals.sftp.is_none() {
+                    bail!("[{}] Sftp configured for job but no [global.SFTP] defaults found!",self.name());
+                }
+            },
+        }
+        Ok(())
+    }
 
     /// Time of last backup run
     pub fn last_run(&self) -> Option<OffsetDateTime> {
@@ -637,7 +653,6 @@ impl Job {
 
                 outp.env("RESTIC_REPOSITORY", url)
                     .env("RESTIC_PASSWORD", self.data.repository_key.as_str());
-                todo!("-o ssh")
             }
         }
         Ok(outp)
