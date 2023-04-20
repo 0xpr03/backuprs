@@ -29,7 +29,7 @@ pub struct Job {
     globals: Rc<Global>,
     /// Last snapshot run
     ///
-    /// also tells whether this repo got intialized
+    /// also tells whether this repo got initialized
     last_run: Cell<Option<OffsetDateTime>>,
     next_run: Cell<Option<OffsetDateTime>>,
 }
@@ -50,19 +50,28 @@ impl Job {
         match self.data.backend {
             config::JobBackend::S3(_) => {
                 if self.globals.s3.is_none() {
-                    bail!("[{}] S3 configured for job but no [global.S3] defaults found!",self.name());
+                    bail!(
+                        "[{}] S3 backend configured for job but no [global.S3] defaults found!",
+                        self.name()
+                    );
                 }
-            },
+            }
             config::JobBackend::Rest(_) => {
                 if self.globals.rest.is_none() {
-                    bail!("[{}] Rest configured for job but no [global.Rest] defaults found!",self.name());
+                    bail!(
+                        "[{}] Rest backend configured for job but no [global.Rest] defaults found!",
+                        self.name()
+                    );
                 }
-            },
+            }
             config::JobBackend::SFTP(_) => {
                 if self.globals.sftp.is_none() {
-                    bail!("[{}] Sftp configured for job but no [global.SFTP] defaults found!",self.name());
+                    bail!(
+                        "[{}] SFTP backend configured for job but no [global.SFTP] defaults found!",
+                        self.name()
+                    );
                 }
-            },
+            }
         }
         Ok(())
     }
