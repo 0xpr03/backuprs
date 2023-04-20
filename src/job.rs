@@ -614,10 +614,12 @@ impl Job {
                 let mut url: String = String::from("sftp:");
                 url.push_str(&sftp_data.sftp_user);
                 url.push_str("@");
-                match &sftp_data.overrides {
-                    Some(overrides) => url.push_str(&overrides.sftp_host),
-                    None => url.push_str(&default.sftp_host),
-                }
+                let host = sftp_data
+                    .overrides
+                    .as_ref()
+                    .map(|v| &v.sftp_host)
+                    .unwrap_or_else(|| &default.sftp_host);
+                url.push_str(&host);
                 url.push_str("/");
                 url.push_str(&self.data.repository);
 
@@ -627,7 +629,9 @@ impl Job {
                     .map(|v| &v.sftp_command)
                     .unwrap_or(&default.sftp_command);
                 if let Some(command) = connect_command {
-                    let command = command.replace("{user}", &sftp_data.sftp_user);
+                    let command = command
+                        .replace("{user}", &sftp_data.sftp_user)
+                        .replace("{host}", host);
                     outp.arg(command);
                 }
 

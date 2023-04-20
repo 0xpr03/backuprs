@@ -6,9 +6,9 @@ use std::rc::Rc;
 
 use miette::{bail, miette, Result};
 use miette::{Context, IntoDiagnostic};
-use serde::{de, Serialize};
 use serde::Deserialize;
 use serde::Deserializer;
+use serde::{de, Serialize};
 use time::format_description;
 
 use crate::error::{ComRes, CommandError};
@@ -86,7 +86,10 @@ pub struct BackupTimeRange {
 
 impl Default for BackupTimeRange {
     fn default() -> Self {
-        Self { backup_start_time: time::Time::MIDNIGHT, backup_end_time: time::Time::MIDNIGHT }
+        Self {
+            backup_start_time: time::Time::MIDNIGHT,
+            backup_end_time: time::Time::MIDNIGHT,
+        }
     }
 }
 
@@ -323,7 +326,7 @@ mod test {
         let mut conf = Conf::default();
         conf.job.push(Default::default());
         conf.job.push(Default::default());
-        println!("{}",toml::to_string_pretty(&conf).unwrap());
+        println!("{}", toml::to_string_pretty(&conf).unwrap());
 
         let config = include_str!("../config.toml.example");
         let _config: Conf = toml::from_str(config).unwrap();

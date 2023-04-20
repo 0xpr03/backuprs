@@ -37,7 +37,8 @@ sftp_host = "example.com:443"
 # Optional command for connecting with special settings.
 # For restic option `-o sftp.command="ssh -p 22 u1234@u1234.example.com -s sftp"`
 # can contain {user} to be replaced by job user
-sftp_command = "ssh -p 22 {user}@u1234.example.com -s sftp"
+# can contain {host} to be replaced by default or job override host
+sftp_command = "ssh -p 22 {user}@{host} -s sftp"
 
 # S3 as backend
 [global.S3]
@@ -89,8 +90,8 @@ post_command_on_failure = false
 
 [job.SFTP]
 sftp_user = "<CHANGE ME>"
-# optional, can contain {user}
-sftp_command = "ssh -p 22 {user}@u1234.example.com -s sftp"
+# optional, can contain {user} and {host}
+sftp_command = "ssh -p 22 {user}@{host} -s sftp"
 
 # third job, mysql backup only
 [[job]]
