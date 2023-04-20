@@ -36,7 +36,14 @@ server_pubkey_file = "C:/Users/Foo/pub_key"
 sftp_host = "example.com:443"
 # Optional command for connecting with special settings.
 # For restic option `-o sftp.command="ssh -p 22 u1234@u1234.example.com -s sftp"`
-sftp_command = "ssh -p 22 u1234@u1234.example.com -s sftp"
+# can contain {user} to be replaced by job user
+sftp_command = "ssh -p 22 {user}@u1234.example.com -s sftp"
+
+# S3 as backend
+[global.S3]
+# URL for rest server to use for all jobs
+# only domain:port or ip:port
+s3_host = "s3.amazonaws.com"
 
 # All backup jobs, start each one with [[jobs]]
 [[job]]
@@ -49,10 +56,7 @@ name = "Job1"
 paths = ["C:/Users/Foo"]
 # Exclude items see [restic docs](https://restic.readthedocs.io/en/latest/040_backup.html#excluding-files)
 excludes = []
-# Login user
-rest_user = "<CHANGE ME>"
-# Password for user
-rest_password = "<CHANGE ME>"
+
 # Encryption key
 repository_key = "<CHANGE ME>"
 # Repository name
@@ -68,25 +72,37 @@ post_command_on_failure = false
 # MySQL Database backup
 # mysql_db = "database"
 
+[job.Rest]
+# Login user
+rest_user = "<CHANGE ME>"
+# Password for user
+rest_password = "<CHANGE ME>"
+
 # a second job, minimal required settings
 [[job]]
 name = "Job2"
 paths = ["C:/Users/Foo"]
 excludes = []
-user = "<CHANGE ME>"
-password = "<CHANGE ME>"
 repository_key = "<CHANGE ME>"
 repository = "<CHANGE ME>"
 post_command_on_failure = false
 
+[job.SFTP]
+sftp_user = "<CHANGE ME>"
+# optional, can contain {user}
+sftp_command = "ssh -p 22 {user}@u1234.example.com -s sftp"
+
 # third job, mysql backup only
 [[job]]
-name = "Job2"
+name = "Job3"
 paths = []
 excludes = []
-user = "<CHANGE ME>"
-password = "<CHANGE ME>"
+
 repository_key = "<CHANGE ME>"
 repository = "<CHANGE ME>"
 mysql_db = "database"
 post_command_on_failure = false
+
+[job.S3]
+aws_access_key_id = "<CHANGE ME>"
+aws_secret_access_key = "<CHANGE ME>"

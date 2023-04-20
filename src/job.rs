@@ -612,6 +612,8 @@ impl Job {
                     .ok_or_else(|| CommandError::MissingBackendConfig("sftp"))?;
 
                 let mut url: String = String::from("sftp:");
+                url.push_str(&sftp_data.sftp_user);
+                url.push_str("@");
                 match &sftp_data.overrides {
                     Some(overrides) => url.push_str(&overrides.sftp_host),
                     None => url.push_str(&default.sftp_host),
@@ -625,6 +627,7 @@ impl Job {
                     .map(|v| &v.sftp_command)
                     .unwrap_or(&default.sftp_command);
                 if let Some(command) = connect_command {
+                    let command = command.replace("{user}", &sftp_data.sftp_user);
                     outp.arg(command);
                 }
 

@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use miette::{bail, miette, Result};
 use miette::{Context, IntoDiagnostic};
-use serde::de;
+use serde::{de, Serialize};
 use serde::Deserialize;
 use serde::Deserializer;
 use time::format_description;
@@ -15,7 +15,7 @@ use crate::error::{ComRes, CommandError};
 use crate::job::Job;
 use crate::job::JobMap;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Serialize)]
 pub struct Conf {
     pub global: Global,
     /// All backup jobs
@@ -42,7 +42,7 @@ impl Conf {
 
 pub type Defaults = Rc<Global>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct Global {
     // Repository backends and defaults
     /// Rest backend defaults
@@ -74,7 +74,7 @@ pub struct Global {
     pub progress: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct BackupTimeRange {
     /// Backup time start
     #[serde(deserialize_with = "deserialize_time")]
@@ -82,6 +82,12 @@ pub struct BackupTimeRange {
     /// Backup time end
     #[serde(deserialize_with = "deserialize_time")]
     pub backup_end_time: time::Time,
+}
+
+impl Default for BackupTimeRange {
+    fn default() -> Self {
+        Self { backup_start_time: time::Time::MIDNIGHT, backup_end_time: time::Time::MIDNIGHT }
+    }
 }
 
 /// Deserialize a type `S` by deserializing a string, then using the `FromStr`
@@ -181,7 +187,7 @@ impl Global {
     }
 }
 
-// #[derive(Debug, Deserialize)]
+// #[derive(Debug, Deserialize, Default, Serialize)]
 // pub enum RepositoryData {
 //     /// Restic rest-server backend
 //     Rest {
@@ -193,7 +199,7 @@ impl Global {
 //     },
 // }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 /// Defaults for rest backend
 pub struct RestRepository {
     /// Repostiroy host of the rest server. For example 10.0.0.1:443
@@ -203,7 +209,7 @@ pub struct RestRepository {
     pub server_pubkey_file: Option<PathBuf>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 /// Defaults for S3 backend
 pub struct S3Repository {
     /// Host URL of the rest server.
@@ -211,7 +217,7 @@ pub struct S3Repository {
     pub s3_host: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 /// Defaults for rest backend
 pub struct SftpRepository {
     /// Host URL of the sftp server.
@@ -222,7 +228,7 @@ pub struct SftpRepository {
     pub sftp_command: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct JobData {
     /// For referencing jobs in commands and output
     pub name: String,
@@ -252,14 +258,14 @@ pub struct JobData {
 }
 
 /// Pre/Post user supplied command
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct CommandData {
     pub command: String,
     pub args: Vec<String>,
     pub workdir: PathBuf,
 }
 /// Postgres backup data
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct PostgresData {
     #[serde(default)]
     pub change_user: bool,
@@ -269,15 +275,21 @@ pub struct PostgresData {
 }
 
 /// Per job backend
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum JobBackend {
     S3(S3JobData),
     Rest(RestJobData),
     SFTP(SftpJobData),
 }
 
+impl Default for JobBackend {
+    fn default() -> Self {
+        JobBackend::S3(Default::default())
+    }
+}
+
 /// Per job s3-backend data
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct S3JobData {
     pub aws_access_key_id: String,
     pub aws_secret_access_key: String,
@@ -286,7 +298,7 @@ pub struct S3JobData {
 }
 
 /// Per job rest-backend data
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct RestJobData {
     pub rest_user: String,
     pub rest_password: String,
@@ -295,7 +307,7 @@ pub struct RestJobData {
 }
 
 /// Per job sftp-backend data
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct SftpJobData {
     pub sftp_user: String,
     #[serde(flatten)]
@@ -308,6 +320,11 @@ mod test {
 
     #[test]
     fn test_default_config() {
+        let mut conf = Conf::default();
+        conf.job.push(Default::default());
+        conf.job.push(Default::default());
+        println!("{}",toml::to_string_pretty(&conf).unwrap());
+
         let config = include_str!("../config.toml.example");
         let _config: Conf = toml::from_str(config).unwrap();
     }
