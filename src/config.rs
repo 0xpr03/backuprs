@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
 
-use miette::{bail, Result, miette};
+use miette::{bail, miette, Result};
 use miette::{Context, IntoDiagnostic};
 use serde::de;
 use serde::Deserialize;
@@ -123,7 +123,11 @@ impl Global {
                 bail!("Path for config value 'postgres_dumb_binary' is not an exsiting file!");
             }
         }
-        if let Some(RestRepository { rest_host: rest_url, server_pubkey_file }) = &self.rest {
+        if let Some(RestRepository {
+            rest_host: rest_url,
+            server_pubkey_file,
+        }) = &self.rest
+        {
             if let Some(pubkey_file) = server_pubkey_file {
                 if !pubkey_file.exists() {
                     bail!("Rest 'server_pubkey_file' specified, but file does not exist?");
@@ -269,7 +273,7 @@ pub struct PostgresData {
 pub enum JobBackend {
     S3(S3JobData),
     Rest(RestJobData),
-    SFTP(SftpJobData)
+    SFTP(SftpJobData),
 }
 
 /// Per job s3-backend data
@@ -278,7 +282,7 @@ pub struct S3JobData {
     pub aws_access_key_id: String,
     pub aws_secret_access_key: String,
     #[serde(flatten)]
-    pub overrides: Option<S3Repository>
+    pub overrides: Option<S3Repository>,
 }
 
 /// Per job rest-backend data
@@ -287,7 +291,7 @@ pub struct RestJobData {
     pub rest_user: String,
     pub rest_password: String,
     #[serde(flatten)]
-    pub overrides: Option<RestRepository>
+    pub overrides: Option<RestRepository>,
 }
 
 /// Per job sftp-backend data
@@ -295,7 +299,7 @@ pub struct RestJobData {
 pub struct SftpJobData {
     pub sftp_user: String,
     #[serde(flatten)]
-    pub overrides: Option<SftpRepository>
+    pub overrides: Option<SftpRepository>,
 }
 
 #[cfg(test)]

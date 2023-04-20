@@ -545,10 +545,18 @@ impl Job {
         }
         match &self.data.backend {
             config::JobBackend::Rest(rest_data) => {
-                let default = self.globals.rest.as_ref().ok_or_else(||CommandError::MissingBackendConfig("rest"))?;
-                
+                let default = self
+                    .globals
+                    .rest
+                    .as_ref()
+                    .ok_or_else(|| CommandError::MissingBackendConfig("rest"))?;
+
                 let mut url: String = String::from("rest:");
-                let pubkey_has_override = rest_data.overrides.as_ref().map(|v|v.server_pubkey_file.is_some()).unwrap_or(false);
+                let pubkey_has_override = rest_data
+                    .overrides
+                    .as_ref()
+                    .map(|v| v.server_pubkey_file.is_some())
+                    .unwrap_or(false);
                 if default.server_pubkey_file.is_some() || pubkey_has_override {
                     url.push_str("https://");
                 } else {
@@ -564,17 +572,25 @@ impl Job {
                 }
                 url.push_str("/");
                 url.push_str(&self.data.repository);
-                
+
                 outp.env("RESTIC_PASSWORD", self.data.repository_key.as_str())
                     .env("RESTIC_REPOSITORY", url);
-                let key_file = rest_data.overrides.as_ref().map(|v|&v.server_pubkey_file).unwrap_or(&default.server_pubkey_file);
+                let key_file = rest_data
+                    .overrides
+                    .as_ref()
+                    .map(|v| &v.server_pubkey_file)
+                    .unwrap_or(&default.server_pubkey_file);
                 if let Some(key_file) = key_file {
                     outp.arg("--cacert").arg(key_file);
                 }
             }
             config::JobBackend::S3(s3_data) => {
-                let default = self.globals.s3.as_ref().ok_or_else(||CommandError::MissingBackendConfig("S3"))?;
-                
+                let default = self
+                    .globals
+                    .s3
+                    .as_ref()
+                    .ok_or_else(|| CommandError::MissingBackendConfig("S3"))?;
+
                 let mut url: String = String::from("s3:");
                 match &s3_data.overrides {
                     Some(overrides) => url.push_str(&overrides.s3_host),
@@ -587,10 +603,14 @@ impl Job {
                     .env("RESTIC_PASSWORD", self.data.repository_key.as_str())
                     .env("AWS_ACCESS_KEY_ID", &s3_data.aws_access_key_id)
                     .env("AWS_SECRET_ACCESS_KEY", &s3_data.aws_secret_access_key);
-            },
+            }
             config::JobBackend::SFTP(sftp_data) => {
-                let default = self.globals.sftp.as_ref().ok_or_else(||CommandError::MissingBackendConfig("sftp"))?;
-                
+                let default = self
+                    .globals
+                    .sftp
+                    .as_ref()
+                    .ok_or_else(|| CommandError::MissingBackendConfig("sftp"))?;
+
                 let mut url: String = String::from("sftp:");
                 match &sftp_data.overrides {
                     Some(overrides) => url.push_str(&overrides.sftp_host),
@@ -599,7 +619,11 @@ impl Job {
                 url.push_str("/");
                 url.push_str(&self.data.repository);
 
-                let connect_command = sftp_data.overrides.as_ref().map(|v|&v.sftp_command).unwrap_or(&default.sftp_command);
+                let connect_command = sftp_data
+                    .overrides
+                    .as_ref()
+                    .map(|v| &v.sftp_command)
+                    .unwrap_or(&default.sftp_command);
                 if let Some(command) = connect_command {
                     outp.arg(command);
                 }
@@ -607,7 +631,7 @@ impl Job {
                 outp.env("RESTIC_REPOSITORY", url)
                     .env("RESTIC_PASSWORD", self.data.repository_key.as_str());
                 todo!("-o ssh")
-            },
+            }
         }
         Ok(outp)
     }
