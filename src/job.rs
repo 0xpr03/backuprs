@@ -599,6 +599,11 @@ impl Job {
                 url.push_str("/");
                 url.push_str(&self.data.repository);
 
+                let connect_command = sftp_data.overrides.as_ref().map(|v|&v.sftp_command).unwrap_or(&default.sftp_command);
+                if let Some(command) = connect_command {
+                    outp.arg(command);
+                }
+
                 outp.env("RESTIC_REPOSITORY", url)
                     .env("RESTIC_PASSWORD", self.data.repository_key.as_str());
                 todo!("-o ssh")
