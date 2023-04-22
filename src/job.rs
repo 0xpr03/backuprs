@@ -258,12 +258,12 @@ impl Job {
     fn run_pre_jobs(&self, context: &mut BackupContext) -> Result<()> {
         if let Some(mysql_db) = self.data.mysql_db.as_deref() {
             if self.verbose() {
-                println!("[{}] Starting mysql dumb", self.name());
+                println!("[{}] Starting mysql dump", self.name());
             }
             let path = context.temp_dir()?;
-            let dumb_path = path.join("db_dumb_mysql.sql");
+            let dump_path = path.join("db_dump_mysql.sql");
             let mut args_output = OsString::from("--result-file=");
-            args_output.push(&dumb_path);
+            args_output.push(&dump_path);
 
             let output = self
                 .globals
@@ -272,26 +272,26 @@ impl Job {
                 .arg(args_output)
                 .output()
                 .into_diagnostic()
-                .wrap_err("Starting mysqldumb")?;
+                .wrap_err("Starting mysqldump")?;
             if !output.status.success() {
-                self.print_output_verbose(&output, "mysqldumb");
+                self.print_output_verbose(&output, "mysqldump");
                 bail!(
-                    "Mysqldumb failed, exit code {}",
+                    "Mysqldump failed, exit code {}",
                     output.status.code().unwrap_or(0)
                 )
             } else if self.verbose() {
-                self.print_output_verbose(&output, "mysqldumb");
+                self.print_output_verbose(&output, "mysqldump");
             }
-            context.register_backup_target(dumb_path);
+            context.register_backup_target(dump_path);
         }
         if let Some(postgres_db) = &self.data.postgres_db {
             if self.verbose() {
-                println!("[{}] Starting postgres dumb", self.name());
+                println!("[{}] Starting postgres dump", self.name());
             }
             let path = context.temp_dir()?;
-            let dumb_path = path.join("db_dumb_postgres.sql");
+            let dump_path = path.join("db_dump_postgres.sql");
             let mut args_output = OsString::from("--file=");
-            args_output.push(&dumb_path);
+            args_output.push(&dump_path);
 
             let mut cmd = self.globals.postgres_cmd_base(postgres_db.change_user)?;
 
@@ -313,17 +313,17 @@ impl Job {
             let output = cmd
                 .output()
                 .into_diagnostic()
-                .wrap_err("Starting pg_dumb")?;
+                .wrap_err("Starting pg_dump")?;
             if !output.status.success() {
-                self.print_output_verbose(&output, "pg_dumb");
+                self.print_output_verbose(&output, "pg_dump");
                 bail!(
-                    "pg_dumb failed, exit code {}",
+                    "pg_dump failed, exit code {}",
                     output.status.code().unwrap_or(0)
                 )
             } else if self.verbose() {
-                self.print_output_verbose(&output, "pg_dumb");
+                self.print_output_verbose(&output, "pg_dump");
             }
-            context.register_backup_target(dumb_path);
+            context.register_backup_target(dump_path);
         }
         if let Some(command_data) = &self.data.pre_command {
             self.run_user_command(context, command_data, "pre-command", true)?;

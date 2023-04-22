@@ -8,11 +8,11 @@ default_interval = 720
 # Directory used for database files created during backup creation
 scratch_dir = "scratchdir"
 
-# mysql dumb binary, if used for database backups, can be left blank if available in path
-# mysql_dumb_binary = "C:/Program Files/mysql/mysqldump.exe"
+# mysql dump binary, if used for database backups, can be left blank if available in path
+# mysql_dump_binary = "C:/Program Files/mysql/mysqldump.exe"
 
-# postgres dumb binary, if used for database backups, can be left blank if available in path
-# postgres_dumb_binary = "C:/Program Files/PostgreSQL/14/bin/pg_dump.exe"
+# postgres dump binary, if used for database backups, can be left blank if available in path
+# postgres_dump_binary = "C:/Program Files/PostgreSQL/14/bin/pg_dump.exe"
 
 # [global.period]
 # Optionally limit backup scheduling to the following time frame

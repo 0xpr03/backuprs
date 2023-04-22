@@ -60,10 +60,10 @@ pub struct Global {
     pub default_interval: u64,
     /// Period of time to perform backup jobs
     pub period: Option<BackupTimeRange>,
-    /// Mysql Dumb Path
-    pub mysql_dumb_binary: Option<PathBuf>,
-    /// Postgres Dumb Path
-    pub postgres_dumb_binary: Option<PathBuf>,
+    /// Mysql Dump Path
+    pub mysql_dump_binary: Option<PathBuf>,
+    /// Postgres Dump Path
+    pub postgres_dump_binary: Option<PathBuf>,
     /// Path for folder used for DB backups
     pub scratch_dir: PathBuf,
     #[serde(default)]
@@ -122,14 +122,14 @@ impl Global {
                 bail!("Backup period start and end time can't be the same!");
             }
         }
-        if let Some(path) = &self.mysql_dumb_binary {
+        if let Some(path) = &self.mysql_dump_binary {
             if !path.is_file() {
-                bail!("Path for config value 'mysql_dumb_binary' is not an exsiting file!");
+                bail!("Path for config value 'mysql_dump_binary' is not an exsiting file!");
             }
         }
-        if let Some(path) = &self.postgres_dumb_binary {
+        if let Some(path) = &self.postgres_dump_binary {
             if !path.is_file() {
-                bail!("Path for config value 'postgres_dumb_binary' is not an exsiting file!");
+                bail!("Path for config value 'postgres_dump_binary' is not an exsiting file!");
             }
         }
         if let Some(RestRepository {
@@ -149,7 +149,7 @@ impl Global {
         Ok(())
     }
     pub fn mysql_cmd_base(&self) -> Command {
-        if let Some(path) = &self.mysql_dumb_binary {
+        if let Some(path) = &self.mysql_dump_binary {
             Command::new(path)
         } else {
             #[cfg(target_os = "windows")]
@@ -161,16 +161,16 @@ impl Global {
         }
     }
     pub fn postgres_cmd_base(&self, sudo: bool) -> Result<Command> {
-        let binary = match &self.postgres_dumb_binary {
+        let binary = match &self.postgres_dump_binary {
             Some(path) => path.as_os_str(),
             None => {
                 #[cfg(target_os = "windows")]
                 {
-                    OsStr::new("pg_dumb.exe")
+                    OsStr::new("pg_dump.exe")
                 }
                 #[cfg(not(target_os = "windows"))]
                 {
-                    OsStr::new("pg_dumb")
+                    OsStr::new("pg_dump")
                 }
             }
         };
