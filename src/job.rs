@@ -483,14 +483,16 @@ impl Job {
         if output.stdout.starts_with(b"Fatal") || !output.status.success() {
             if !output.stderr.is_empty() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                if stderr.contains("Fatal: unable to open config file")
-                    && stderr.contains("<config/> does not exist")
-                {
-                    if self.verbose() {
-                        // still print on verbose
-                        self.print_output_verbose_restic(output);
+                if stderr.contains("Fatal: unable to open config file") {
+                    if stderr.contains("<config/> does not exist") // rest
+                     || stderr.contains("file does not exist") // sftp
+                    {
+                        if self.verbose() {
+                            // still print on verbose
+                            self.print_output_verbose_restic(output);
+                        }
+                        return Err(CommandError::NotInitialized);
                     }
-                    return Err(CommandError::NotInitialized);
                 }
             }
             self.print_output_verbose_restic(output);
