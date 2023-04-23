@@ -645,7 +645,7 @@ impl Job {
                     .map(|v| &v.sftp_host)
                     .unwrap_or_else(|| &default.sftp_host);
                 url.push_str(&host);
-                url.push_str("/");
+                url.push_str(":/");
                 url.push_str(&self.data.repository);
 
                 if self.verbose() {
