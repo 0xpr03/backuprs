@@ -13,7 +13,7 @@ use time::format_description;
 use crate::job::Job;
 use crate::job::JobMap;
 
-#[derive(Deserialize, Default, Serialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct Conf {
     pub global: Global,
     /// All backup jobs
@@ -44,10 +44,13 @@ pub type Defaults = Rc<Global>;
 pub struct Global {
     // Repository backends and defaults
     /// Rest backend defaults
+    #[serde(rename(deserialize = "Rest"))]
     pub rest: Option<RestRepository>,
     /// SFTP backend defaults
+    #[serde(rename(deserialize = "SFTP"))]
     pub sftp: Option<SftpRepository>,
     /// S3 backend defaults
+    #[serde(rename(deserialize = "S3"))]
     pub s3: Option<S3Repository>,
     /// Path to restic binary
     pub restic_binary: PathBuf,
@@ -319,14 +322,31 @@ pub struct SftpJobData {
 mod test {
     use super::*;
 
+    fn default_config() -> Conf {
+        let mut conf = Conf::default();
+        conf.global.s3 = Some(S3Repository::default());
+        conf.global.rest = Some(RestRepository::default());
+        conf.global.sftp = Some(SftpRepository::default());
+        conf.job.push(Default::default());
+        conf.job.push(Default::default());
+        conf
+    }
+
     #[test]
     fn test_default_config() {
-        let mut conf = Conf::default();
-        conf.job.push(Default::default());
-        conf.job.push(Default::default());
+        let conf = default_config();
         println!("{}", toml::to_string_pretty(&conf).unwrap());
 
         let config = include_str!("../config.toml.example");
         let _config: Conf = toml::from_str(config).unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    fn test_default_config_verify() {
+        let config = include_str!("../config.toml.example");
+        let config: Conf = toml::from_str(config).unwrap();
+        // requires working restic binary and pubkey file
+        config.split().unwrap();
     }
 }
