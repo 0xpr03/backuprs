@@ -280,6 +280,7 @@ pub struct PostgresData {
 
 /// Per job backend
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "job_type")]
 pub enum JobBackend {
     S3(S3JobData),
     Rest(RestJobData),

@@ -73,7 +73,7 @@ post_command_on_failure = false
 # MySQL Database backup
 # mysql_db = "database"
 
-[job.Rest]
+job_type = "Rest"
 # Login user
 rest_user = "<CHANGE ME>"
 # Password for user
@@ -88,7 +88,7 @@ repository_key = "<CHANGE ME>"
 repository = "<CHANGE ME>"
 post_command_on_failure = false
 
-[job.SFTP]
+job_type = "SFTP"
 sftp_user = "<CHANGE ME>"
 # optional, can contain {user} and {host}
 sftp_command = "ssh -p 22 {user}@{host} -s sftp"
@@ -104,6 +104,6 @@ repository = "<CHANGE ME>"
 mysql_db = "database"
 post_command_on_failure = false
 
-[job.S3]
+job_type = "S3"
 aws_access_key_id = "<CHANGE ME>"
 aws_secret_access_key = "<CHANGE ME>"
