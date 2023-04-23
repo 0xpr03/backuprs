@@ -18,7 +18,7 @@ use std::process::Stdio;
 use std::rc::Rc;
 use time::{Duration, OffsetDateTime};
 
-use crate::config::{self, JobData, RestJobData, RestRepository};
+use crate::config::{self, JobData};
 use crate::config::{CommandData, Global};
 use crate::error::{ComRes, CommandError};
 

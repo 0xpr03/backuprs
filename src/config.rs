@@ -4,14 +4,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
 
-use miette::{bail, miette, Result};
+use miette::{bail, Result};
 use miette::{Context, IntoDiagnostic};
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::{de, Serialize};
 use time::format_description;
-
-use crate::error::{ComRes, CommandError};
 use crate::job::Job;
 use crate::job::JobMap;
 
@@ -133,7 +131,7 @@ impl Global {
             }
         }
         if let Some(RestRepository {
-            rest_host: rest_url,
+            rest_host: _,
             server_pubkey_file,
         }) = &self.rest
         {
