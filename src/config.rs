@@ -44,13 +44,13 @@ pub type Defaults = Rc<Global>;
 pub struct Global {
     // Repository backends and defaults
     /// Rest backend defaults
-    #[serde(rename(deserialize = "Rest"))]
+    #[serde(alias = "REST", alias="Rest")]
     pub rest: Option<RestRepository>,
     /// SFTP backend defaults
-    #[serde(rename(deserialize = "SFTP"))]
+    #[serde(alias = "Sftp", alias="SFTP")]
     pub sftp: Option<SftpRepository>,
     /// S3 backend defaults
-    #[serde(rename(deserialize = "S3"))]
+    #[serde(alias = "S3")]
     pub s3: Option<S3Repository>,
     /// Path to restic binary
     pub restic_binary: PathBuf,
@@ -282,8 +282,11 @@ pub struct PostgresData {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "job_type")]
 pub enum JobBackend {
+    #[serde(alias = "s3")]
     S3(S3JobData),
+    #[serde(alias = "rest", alias = "REST")]
     Rest(RestJobData),
+    #[serde(alias = "sftp", alias = "Sftp")]
     SFTP(SftpJobData),
 }
 
