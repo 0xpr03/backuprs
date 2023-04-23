@@ -654,10 +654,11 @@ impl Job {
                     .map(|v| &v.sftp_command)
                     .unwrap_or(&default.sftp_command);
                 if let Some(command) = connect_command {
-                    let command = command
+                    // -o sftp.command="foobar"
+                    let connection_option = format!("sftp.command={command}")
                         .replace("{user}", &sftp_data.sftp_user)
                         .replace("{host}", host);
-                    outp.arg(command);
+                    outp.args(["-o",&connection_option]);
                 }
 
                 outp.env("RESTIC_REPOSITORY", url)
