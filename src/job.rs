@@ -648,6 +648,10 @@ impl Job {
                 url.push_str("/");
                 url.push_str(&self.data.repository);
 
+                if self.verbose() {
+                    println!("[{}] Repo URL: '{url}'",self.name());
+                }
+
                 let connect_command = sftp_data
                     .overrides
                     .as_ref()
@@ -658,6 +662,9 @@ impl Job {
                     let connection_option = format!("sftp.command={command}")
                         .replace("{user}", &sftp_data.sftp_user)
                         .replace("{host}", host);
+                    if self.verbose() {
+                        println!("[{}] Option sftp.command: '{connection_option}'",self.name());
+                    }
                     outp.args(["-o",&connection_option]);
                 }
 
