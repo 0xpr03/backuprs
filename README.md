@@ -156,7 +156,7 @@ user="mysqluser"
 password="secret"
 ```
 
-A global backup user can be greated via
+A global backup user can be created via
 ```sql
 CREATE USER 'backuprs'@'localhost' IDENTIFIED BY '<CHANGE ME>';
 GRANT SELECT, SHOW VIEW, LOCK TABLES, RELOAD, REPLICATION CLIENT ON *.* TO 'backuprs'@'localhost';
