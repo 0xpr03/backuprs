@@ -486,6 +486,7 @@ impl Job {
                 if stderr.contains("Fatal: unable to open config file") {
                     if stderr.contains("<config/> does not exist") // rest
                      || stderr.contains("file does not exist") // sftp
+                     || stderr.contains("Stat: The specified key does not exist") // S3
                     {
                         if self.verbose() {
                             // still print on verbose
