@@ -194,18 +194,6 @@ impl Global {
     }
 }
 
-// #[derive(Debug, Deserialize, Default, Serialize)]
-// pub enum RepositoryData {
-//     /// Restic rest-server backend
-//     Rest {
-//         /// Repostiroy URL of the rest server.
-//         /// Does not contain the repo or user/password.
-//         rest_url: String,
-//         /// Pubkey for the server when HTTPS is used.
-//         server_pubkey_file: Option<PathBuf>,
-//     },
-// }
-
 #[derive(Debug, Deserialize, Default, Serialize)]
 /// Defaults for rest backend
 pub struct RestRepository {
@@ -219,29 +207,28 @@ pub struct RestRepository {
 }
 
 macro_rules! impl_required_getters {
-    ( $target:ident, $name:ident ) => (
+    ( $target:ident, $name:ident ) => {
         impl $target {
             pub fn $name<'a>(&'a self, defaults: &'a Option<$target>) -> ComRes<&'a str> {
                 self.$name
                     .as_deref()
-                    .or(defaults.as_ref().map(|v|v.$name.as_deref()).flatten())
+                    .or(defaults.as_ref().map(|v| v.$name.as_deref()).flatten())
                     .ok_or(CommandError::MissingConfigValue("$name"))
             }
         }
-    );
+    };
 }
 macro_rules! impl_optional_getters {
-    ( $target:ident, $name:ident, $ret_type:ty ) => (
+    ( $target:ident, $name:ident, $ret_type:ty ) => {
         impl $target {
             pub fn $name<'a>(&'a self, defaults: &'a Option<$target>) -> Option<&'a $ret_type> {
                 self.$name
-                .as_deref()
-                .or(defaults.as_ref().map(|v|v.$name.as_deref()).flatten())
+                    .as_deref()
+                    .or(defaults.as_ref().map(|v| v.$name.as_deref()).flatten())
             }
         }
-    );
+    };
 }
-
 
 impl_required_getters!(RestRepository, rest_user);
 impl_required_getters!(RestRepository, rest_password);

@@ -607,8 +607,14 @@ impl Job {
 
                 outp.env("RESTIC_REPOSITORY", url)
                     .env("RESTIC_PASSWORD", self.data.repository_key.as_str())
-                    .env("AWS_ACCESS_KEY_ID", &s3_data.aws_access_key_id(&self.globals.s3)?)
-                    .env("AWS_SECRET_ACCESS_KEY", &s3_data.aws_secret_access_key(&self.globals.s3)?);
+                    .env(
+                        "AWS_ACCESS_KEY_ID",
+                        &s3_data.aws_access_key_id(&self.globals.s3)?,
+                    )
+                    .env(
+                        "AWS_SECRET_ACCESS_KEY",
+                        &s3_data.aws_secret_access_key(&self.globals.s3)?,
+                    );
             }
             config::JobBackend::SFTP(sftp_data) => {
                 let mut url: String = String::from("sftp:");
