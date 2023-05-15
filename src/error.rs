@@ -23,7 +23,7 @@ pub enum CommandError {
     #[diagnostic(code(restic::invalid_config))]
     MissingBackendConfig(&'static str),
 
-    #[error("Required value for {0} not specific in the defaults or job specific configuration.")]
+    #[error("Missing required value for {0}, not specific in the defaults or job specific configuration.")]
     #[diagnostic(code(restic::invalid_config))]
     MissingConfigValue(&'static str),
 }

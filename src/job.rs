@@ -42,35 +42,36 @@ impl Job {
             last_run: Cell::new(None),
             next_run: Cell::new(None),
         };
-        job.verify()?;
+        job.verify()
+            .wrap_err(miette!("[{}] Failed to load job configuration"))?;
         Ok(job)
     }
 
     fn verify(&self) -> Result<()> {
-        match self.data.backend {
-            config::JobBackend::S3(_) => {
-                if self.globals.s3.is_none() {
-                    bail!(
-                        "[{}] S3 backend configured for job but no [global.S3] defaults found!",
-                        self.name()
-                    );
+        match &self.data.backend {
+            config::JobBackend::S3(s3) => {
+                s3.aws_access_key_id(&self.globals.s3)?;
+                s3.aws_secret_access_key(&self.globals.s3)?;
+                s3.s3_host(&self.globals.s3)?;
+            }
+            config::JobBackend::Rest(rest) => {
+                rest.rest_host(&self.globals.rest)?;
+                rest.rest_password(&self.globals.rest)?;
+                rest.rest_user(&self.globals.rest)?;
+                if let Some(pubkey_file) = rest.server_pubkey_file(&self.globals.rest) {
+                    if !pubkey_file.exists() {
+                        bail!("Rest 'server_pubkey_file' specified, but file does not exist?");
+                    }
+                    std::fs::File::open(&pubkey_file)
+                        .into_diagnostic()
+                        .wrap_err(
+                            "Default Rest 'server_pubkey_file' specified, but can't read file?",
+                        )?;
                 }
             }
-            config::JobBackend::Rest(_) => {
-                if self.globals.rest.is_none() {
-                    bail!(
-                        "[{}] Rest backend configured for job but no [global.Rest] defaults found!",
-                        self.name()
-                    );
-                }
-            }
-            config::JobBackend::SFTP(_) => {
-                if self.globals.sftp.is_none() {
-                    bail!(
-                        "[{}] SFTP backend configured for job but no [global.SFTP] defaults found!",
-                        self.name()
-                    );
-                }
+            config::JobBackend::SFTP(sftp) => {
+                sftp.sftp_host(&self.globals.sftp)?;
+                sftp.sftp_user(&self.globals.sftp)?;
             }
         }
         Ok(())

@@ -143,11 +143,13 @@ impl Global {
         {
             if let Some(pubkey_file) = server_pubkey_file {
                 if !pubkey_file.exists() {
-                    bail!("Rest 'server_pubkey_file' specified, but file does not exist?");
+                    bail!("Default Rest 'server_pubkey_file' specified, but file does not exist?");
                 }
                 std::fs::File::open(&pubkey_file)
                     .into_diagnostic()
-                    .wrap_err("Rest 'server_pubkey_file' specified, but can't read file?")?;
+                    .wrap_err(
+                        "Default Rest 'server_pubkey_file' specified, but can't read file?",
+                    )?;
             }
         }
         Ok(())
