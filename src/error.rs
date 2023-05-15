@@ -7,17 +7,25 @@ pub enum CommandError {
     #[diagnostic(code(io_error))]
     IoError(#[from] std::io::Error),
 
-    #[error("Repository not initialized")]
+    #[error("Repository not initialized.")]
     #[diagnostic(code(restic::not_initialized))]
     NotInitialized,
 
-    #[error("Restic exited with errors {0}")]
+    #[error("Restic exited with errors {0}.")]
     #[diagnostic(code(restic::error))]
     ResticError(String),
 
-    #[error("Unexpected response from restic")]
+    #[error("Unexpected response from restic.")]
     #[diagnostic(code(restic::invalid_json))]
     InvalidResponse(#[from] serde_json::error::Error),
+
+    #[error("Missing {0} configuration for job.")]
+    #[diagnostic(code(restic::invalid_config))]
+    MissingBackendConfig(&'static str),
+
+    #[error("Missing required value for {0}, not specific in the defaults or job specific configuration.")]
+    #[diagnostic(code(restic::invalid_config))]
+    MissingConfigValue(&'static str),
 }
 
 impl PartialEq for CommandError {

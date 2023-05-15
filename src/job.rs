@@ -29,7 +29,7 @@ pub struct Job {
     globals: Rc<Global>,
     /// Last snapshot run
     ///
-    /// also tells whether this repo got intialized
+    /// also tells whether this repo got initialized
     last_run: Cell<Option<OffsetDateTime>>,
     next_run: Cell<Option<OffsetDateTime>>,
 }
@@ -42,14 +42,53 @@ impl Job {
             last_run: Cell::new(None),
             next_run: Cell::new(None),
         };
-        // job.verify()?;
+        job.verify()
+            .wrap_err(miette!("[{}] Failed to load job configuration"))?;
         Ok(job)
     }
 
-    // fn verify(&self) -> Result<()> {
-    //     // unused
-    //     Ok(())
-    // }
+    fn verify(&self) -> Result<()> {
+        match &self.data.backend {
+            config::JobBackend::S3(s3) => {
+                s3.aws_access_key_id(&self.globals.s3)?;
+                s3.aws_secret_access_key(&self.globals.s3)?;
+                s3.s3_host(&self.globals.s3)?;
+            }
+            config::JobBackend::Rest(rest) => {
+                rest.rest_host(&self.globals.rest)?;
+                rest.rest_password(&self.globals.rest)?;
+                rest.rest_user(&self.globals.rest)?;
+                let pubkey_file = rest.server_pubkey_file(&self.globals.rest);
+                if self.verbose() {
+                    match pubkey_file.is_some() {
+                        true => println!("[{}] Server pubkey file found, using https", self.name()),
+                        false => {
+                            println!("[{}] No server pubkey file found, using http", self.name())
+                        }
+                    }
+                }
+                if let Some(pubkey_file) = pubkey_file {
+                    if !pubkey_file.exists() {
+                        bail!("Rest 'server_pubkey_file' specified, but file does not exist?");
+                    }
+                    std::fs::File::open(&pubkey_file)
+                        .into_diagnostic()
+                        .wrap_err(
+                            "Default Rest 'server_pubkey_file' specified, but can't read file?",
+                        )?;
+                }
+            }
+            config::JobBackend::SFTP(sftp) => {
+                sftp.sftp_host(&self.globals.sftp)?;
+                sftp.sftp_user(&self.globals.sftp)?;
+                match sftp.sftp_command(&self.globals.sftp).is_some() {
+                    true => println!("[{}] Sftp connect command specified.", self.name()),
+                    false => println!("[{}] No sftp connect command specified.", self.name()),
+                }
+            }
+        }
+        Ok(())
+    }
 
     /// Time of last backup run
     pub fn last_run(&self) -> Option<OffsetDateTime> {
@@ -233,12 +272,12 @@ impl Job {
     fn run_pre_jobs(&self, context: &mut BackupContext) -> Result<()> {
         if let Some(mysql_db) = self.data.mysql_db.as_deref() {
             if self.verbose() {
-                println!("[{}] Starting mysql dumb", self.name());
+                println!("[{}] Starting mysql dump", self.name());
             }
             let path = context.temp_dir()?;
-            let dumb_path = path.join("db_dumb_mysql.sql");
+            let dump_path = path.join("db_dump_mysql.sql");
             let mut args_output = OsString::from("--result-file=");
-            args_output.push(&dumb_path);
+            args_output.push(&dump_path);
 
             let output = self
                 .globals
@@ -247,26 +286,26 @@ impl Job {
                 .arg(args_output)
                 .output()
                 .into_diagnostic()
-                .wrap_err("Starting mysqldumb")?;
+                .wrap_err("Starting mysqldump")?;
             if !output.status.success() {
-                self.print_output_verbose(&output, "mysqldumb");
+                self.print_output_verbose(&output, "mysqldump");
                 bail!(
-                    "Mysqldumb failed, exit code {}",
+                    "Mysqldump failed, exit code {}",
                     output.status.code().unwrap_or(0)
                 )
             } else if self.verbose() {
-                self.print_output_verbose(&output, "mysqldumb");
+                self.print_output_verbose(&output, "mysqldump");
             }
-            context.register_backup_target(dumb_path);
+            context.register_backup_target(dump_path);
         }
         if let Some(postgres_db) = &self.data.postgres_db {
             if self.verbose() {
-                println!("[{}] Starting postgres dumb", self.name());
+                println!("[{}] Starting postgres dump", self.name());
             }
             let path = context.temp_dir()?;
-            let dumb_path = path.join("db_dumb_postgres.sql");
+            let dump_path = path.join("db_dump_postgres.sql");
             let mut args_output = OsString::from("--file=");
-            args_output.push(&dumb_path);
+            args_output.push(&dump_path);
 
             let mut cmd = self.globals.postgres_cmd_base(postgres_db.change_user)?;
 
@@ -288,17 +327,17 @@ impl Job {
             let output = cmd
                 .output()
                 .into_diagnostic()
-                .wrap_err("Starting pg_dumb")?;
+                .wrap_err("Starting pg_dump")?;
             if !output.status.success() {
-                self.print_output_verbose(&output, "pg_dumb");
+                self.print_output_verbose(&output, "pg_dump");
                 bail!(
-                    "pg_dumb failed, exit code {}",
+                    "pg_dump failed, exit code {}",
                     output.status.code().unwrap_or(0)
                 )
             } else if self.verbose() {
-                self.print_output_verbose(&output, "pg_dumb");
+                self.print_output_verbose(&output, "pg_dump");
             }
-            context.register_backup_target(dumb_path);
+            context.register_backup_target(dump_path);
         }
         if let Some(command_data) = &self.data.pre_command {
             self.run_user_command(context, command_data, "pre-command", true)?;
@@ -458,14 +497,18 @@ impl Job {
         if output.stdout.starts_with(b"Fatal") || !output.status.success() {
             if !output.stderr.is_empty() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                if stderr.contains("Fatal: unable to open config file")
-                    && stderr.contains("<config/> does not exist")
-                {
-                    if self.verbose() {
-                        // still print on verbose
-                        self.print_output_verbose_restic(output);
+                if stderr.contains("Fatal: unable to open config file") {
+                    if stderr.contains("<config/> does not exist") // rest
+                     || stderr.contains("file does not exist") // sftp
+                     || stderr.contains("Stat: The specified key does not exist")
+                    // S3
+                    {
+                        if self.verbose() {
+                            // still print on verbose
+                            self.print_output_verbose_restic(output);
+                        }
+                        return Err(CommandError::NotInitialized);
                     }
-                    return Err(CommandError::NotInitialized);
                 }
             }
             self.print_output_verbose_restic(output);
@@ -538,21 +581,86 @@ impl Job {
 
     /// Restic command base
     fn command_base(&self, command: &'static str, quiet: bool) -> ComRes<Command> {
-        let mut outp = Command::new(&self.globals.restic_binary);
+        let mut outp: Command = Command::new(&self.globals.restic_binary);
         outp.args([command, "--json"]);
         if quiet {
             outp.arg("-q");
         }
-        match &self.globals.backend {
-            config::RepositoryData::Rest {
-                rest_url: _,
-                server_pubkey_file,
-            } => {
+        match &self.data.backend {
+            config::JobBackend::Rest(rest_data) => {
+                let mut url: String = String::from("rest:");
+                let key_file = rest_data.server_pubkey_file(&self.globals.rest);
+                if key_file.is_some() {
+                    url.push_str("https://");
+                } else {
+                    url.push_str("http://");
+                }
+                url.push_str(&rest_data.rest_user(&self.globals.rest)?);
+                url.push_str(":");
+                url.push_str(&rest_data.rest_password(&self.globals.rest)?);
+                url.push_str("@");
+                url.push_str(rest_data.rest_host(&self.globals.rest)?);
+                // match &rest_data.overrides {
+                //     Some(overrides) => url.push_str(&overrides.rest_host),
+                //     None => url.push_str(&default.rest_host),
+                // }
+                url.push_str("/");
+                url.push_str(&self.data.repository);
+
                 outp.env("RESTIC_PASSWORD", self.data.repository_key.as_str())
-                    .env("RESTIC_REPOSITORY", self.globals.repo_url(&self.data));
-                if let Some(key_file) = server_pubkey_file {
+                    .env("RESTIC_REPOSITORY", url);
+                if let Some(key_file) = key_file {
                     outp.arg("--cacert").arg(key_file);
                 }
+            }
+            config::JobBackend::S3(s3_data) => {
+                let mut url: String = String::from("s3:");
+                url.push_str(&s3_data.s3_host(&self.globals.s3)?);
+                url.push_str("/");
+                url.push_str(&self.data.repository);
+
+                outp.env("RESTIC_REPOSITORY", url)
+                    .env("RESTIC_PASSWORD", self.data.repository_key.as_str())
+                    .env(
+                        "AWS_ACCESS_KEY_ID",
+                        &s3_data.aws_access_key_id(&self.globals.s3)?,
+                    )
+                    .env(
+                        "AWS_SECRET_ACCESS_KEY",
+                        &s3_data.aws_secret_access_key(&self.globals.s3)?,
+                    );
+            }
+            config::JobBackend::SFTP(sftp_data) => {
+                let mut url: String = String::from("sftp:");
+                let sftp_user = &sftp_data.sftp_user(&self.globals.sftp)?;
+                url.push_str(sftp_user);
+                url.push_str("@");
+                let host: &str = sftp_data.sftp_host(&self.globals.sftp)?;
+                url.push_str(&host);
+                url.push_str(":/");
+                url.push_str(&self.data.repository);
+
+                if self.verbose() {
+                    println!("[{}] Repo URL: '{url}'", self.name());
+                }
+
+                let connect_command = sftp_data.sftp_command(&self.globals.sftp);
+                if let Some(command) = connect_command {
+                    // -o sftp.command="foobar"
+                    let connection_option = format!("sftp.command={command}")
+                        .replace("{user}", sftp_user)
+                        .replace("{host}", host);
+                    if self.verbose() {
+                        println!(
+                            "[{}] Option sftp.command: '{connection_option}'",
+                            self.name()
+                        );
+                    }
+                    outp.args(["-o", &connection_option]);
+                }
+
+                outp.env("RESTIC_REPOSITORY", url)
+                    .env("RESTIC_PASSWORD", self.data.repository_key.as_str());
             }
         }
         Ok(outp)

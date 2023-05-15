@@ -1,8 +1,6 @@
 # Rename this to config.toml
 
 [global]
-# Pubkey of restic server
-restic_key = "<CHANGE ME>"
 # Path to restic binary
 restic_binary = "C:/restic_0.15.1_windows_amd64/restic_0.15.1_windows_amd64.exe"
 # Default intervall for jobs in minutes
@@ -10,11 +8,11 @@ default_interval = 720
 # Directory used for database files created during backup creation
 scratch_dir = "scratchdir"
 
-# mysql dumb binary, if used for database backups, can be left blank if available in path
-# mysql_dumb_binary = "C:/Program Files/mysql/mysqldump.exe"
+# mysql dump binary, if used for database backups, can be left blank if available in path
+# mysql_dump_binary = "C:/Program Files/mysql/mysqldump.exe"
 
-# postgres dumb binary, if used for database backups, can be left blank if available in path
-# postgres_dumb_binary = "C:/Program Files/PostgreSQL/14/bin/pg_dump.exe"
+# postgres dump binary, if used for database backups, can be left blank if available in path
+# postgres_dump_binary = "C:/Program Files/PostgreSQL/14/bin/pg_dump.exe"
 
 # [global.period]
 # Optionally limit backup scheduling to the following time frame
@@ -27,8 +25,26 @@ scratch_dir = "scratchdir"
 [global.Rest]
 # URL for rest server to use for all jobs
 # only domain:port or ip:port
-rest_url = "example.com:443"
+rest_host = "example.com:443"
+# Pubkey of restic server
 server_pubkey_file = "C:/Users/Foo/pub_key"
+
+# SFTP as backend
+[global.SFTP]
+# URL for rest server to use for all jobs
+# only domain:port or ip:port
+sftp_host = "example.com:443"
+# Optional command for connecting with special settings.
+# For restic option `-o sftp.command="ssh -p 22 u1234@u1234.example.com -s sftp"`
+# can contain {user} to be replaced by job user
+# can contain {host} to be replaced by default or job override host
+sftp_command = "ssh -p 22 {user}@{host} -s sftp"
+
+# S3 as backend
+[global.S3]
+# URL for rest server to use for all jobs
+# only domain:port or ip:port
+s3_host = "s3.amazonaws.com"
 
 # All backup jobs, start each one with [[jobs]]
 [[job]]
@@ -41,10 +57,7 @@ name = "Job1"
 paths = ["C:/Users/Foo"]
 # Exclude items see [restic docs](https://restic.readthedocs.io/en/latest/040_backup.html#excluding-files)
 excludes = []
-# Login user
-user = "<CHANGE ME>"
-# Password for user
-password = "<CHANGE ME>"
+
 # Encryption key
 repository_key = "<CHANGE ME>"
 # Repository name
@@ -60,25 +73,37 @@ post_command_on_failure = false
 # MySQL Database backup
 # mysql_db = "database"
 
+job_type = "Rest"
+# Login user
+rest_user = "<CHANGE ME>"
+# Password for user
+rest_password = "<CHANGE ME>"
+
 # a second job, minimal required settings
 [[job]]
 name = "Job2"
 paths = ["C:/Users/Foo"]
 excludes = []
-user = "<CHANGE ME>"
-password = "<CHANGE ME>"
 repository_key = "<CHANGE ME>"
 repository = "<CHANGE ME>"
 post_command_on_failure = false
 
+job_type = "SFTP"
+sftp_user = "<CHANGE ME>"
+# optional, can contain {user} and {host}
+sftp_command = "ssh -p 22 {user}@{host} -s sftp"
+
 # third job, mysql backup only
 [[job]]
-name = "Job2"
+name = "Job3"
 paths = []
 excludes = []
-user = "<CHANGE ME>"
-password = "<CHANGE ME>"
+
 repository_key = "<CHANGE ME>"
 repository = "<CHANGE ME>"
 mysql_db = "database"
 post_command_on_failure = false
+
+job_type = "S3"
+aws_access_key_id = "<CHANGE ME>"
+aws_secret_access_key = "<CHANGE ME>"

@@ -1,20 +1,20 @@
 use std::cell::Cell;
 use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
 
-use miette::{bail, Result};
-use miette::{Context, IntoDiagnostic};
-use serde::de;
-use serde::Deserialize;
-use serde::Deserializer;
-use time::format_description;
-
+use crate::error::{ComRes, CommandError};
 use crate::job::Job;
 use crate::job::JobMap;
+use miette::{bail, Result};
+use miette::{Context, IntoDiagnostic};
+use serde::Deserialize;
+use serde::Deserializer;
+use serde::{de, Serialize};
+use time::format_description;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct Conf {
     pub global: Global,
     /// All backup jobs
@@ -41,11 +41,18 @@ impl Conf {
 
 pub type Defaults = Rc<Global>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct Global {
-    /// Repository backend and defaults
-    #[serde(flatten)]
-    pub backend: RepositoryData,
+    // Repository backends and defaults
+    /// Rest backend defaults
+    #[serde(alias = "REST", alias = "Rest")]
+    pub rest: Option<RestRepository>,
+    /// SFTP backend defaults
+    #[serde(alias = "Sftp", alias = "SFTP")]
+    pub sftp: Option<SftpRepository>,
+    /// S3 backend defaults
+    #[serde(alias = "S3")]
+    pub s3: Option<S3Repository>,
     /// Path to restic binary
     pub restic_binary: PathBuf,
     /// Verbose output, passed via CLI params
@@ -55,10 +62,10 @@ pub struct Global {
     pub default_interval: u64,
     /// Period of time to perform backup jobs
     pub period: Option<BackupTimeRange>,
-    /// Mysql Dumb Path
-    pub mysql_dumb_binary: Option<PathBuf>,
-    /// Postgres Dumb Path
-    pub postgres_dumb_binary: Option<PathBuf>,
+    /// Mysql Dump Path
+    pub mysql_dump_binary: Option<PathBuf>,
+    /// Postgres Dump Path
+    pub postgres_dump_binary: Option<PathBuf>,
     /// Path for folder used for DB backups
     pub scratch_dir: PathBuf,
     #[serde(default)]
@@ -69,7 +76,7 @@ pub struct Global {
     pub progress: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct BackupTimeRange {
     /// Backup time start
     #[serde(deserialize_with = "deserialize_time")]
@@ -77,6 +84,15 @@ pub struct BackupTimeRange {
     /// Backup time end
     #[serde(deserialize_with = "deserialize_time")]
     pub backup_end_time: time::Time,
+}
+
+impl Default for BackupTimeRange {
+    fn default() -> Self {
+        Self {
+            backup_start_time: time::Time::MIDNIGHT,
+            backup_end_time: time::Time::MIDNIGHT,
+        }
+    }
 }
 
 /// Deserialize a type `S` by deserializing a string, then using the `FromStr`
@@ -108,58 +124,38 @@ impl Global {
                 bail!("Backup period start and end time can't be the same!");
             }
         }
-        if let Some(path) = &self.mysql_dumb_binary {
+        if let Some(path) = &self.mysql_dump_binary {
             if !path.is_file() {
-                bail!("Path for config value 'mysql_dumb_binary' is not an exsiting file!");
+                bail!("Path for config value 'mysql_dump_binary' is not an exsiting file!");
             }
         }
-        if let Some(path) = &self.postgres_dumb_binary {
+        if let Some(path) = &self.postgres_dump_binary {
             if !path.is_file() {
-                bail!("Path for config value 'postgres_dumb_binary' is not an exsiting file!");
+                bail!("Path for config value 'postgres_dump_binary' is not an exsiting file!");
             }
         }
-        match &self.backend {
-            RepositoryData::Rest {
-                rest_url: _,
-                server_pubkey_file,
-            } => {
-                if let Some(pubkey_file) = server_pubkey_file {
-                    if !pubkey_file.exists() {
-                        bail!("Rest 'server_pubkey_file' specified, but file does not exist?");
-                    }
-                    std::fs::File::open(&pubkey_file)
-                        .into_diagnostic()
-                        .wrap_err("Rest 'server_pubkey_file' specified, but can't read file?")?;
+        if let Some(RestRepository {
+            rest_host: _,
+            server_pubkey_file,
+            rest_user: _,
+            rest_password: _,
+        }) = &self.rest
+        {
+            if let Some(pubkey_file) = server_pubkey_file {
+                if !pubkey_file.exists() {
+                    bail!("Default Rest 'server_pubkey_file' specified, but file does not exist?");
                 }
+                std::fs::File::open(&pubkey_file)
+                    .into_diagnostic()
+                    .wrap_err(
+                        "Default Rest 'server_pubkey_file' specified, but can't read file?",
+                    )?;
             }
         }
         Ok(())
     }
-    pub fn repo_url(&self, job: &JobData) -> String {
-        match &self.backend {
-            RepositoryData::Rest {
-                rest_url: restic_url,
-                server_pubkey_file,
-            } => {
-                let mut url = String::from("rest:");
-                if server_pubkey_file.is_some() {
-                    url.push_str("https://");
-                } else {
-                    url.push_str("http://");
-                }
-                url.push_str(&job.user);
-                url.push_str(":");
-                url.push_str(&job.password);
-                url.push_str("@");
-                url.push_str(&restic_url);
-                url.push_str("/");
-                url.push_str(&job.repository);
-                url
-            }
-        }
-    }
     pub fn mysql_cmd_base(&self) -> Command {
-        if let Some(path) = &self.mysql_dumb_binary {
+        if let Some(path) = &self.mysql_dump_binary {
             Command::new(path)
         } else {
             #[cfg(target_os = "windows")]
@@ -171,16 +167,16 @@ impl Global {
         }
     }
     pub fn postgres_cmd_base(&self, sudo: bool) -> Result<Command> {
-        let binary = match &self.postgres_dumb_binary {
+        let binary = match &self.postgres_dump_binary {
             Some(path) => path.as_os_str(),
             None => {
                 #[cfg(target_os = "windows")]
                 {
-                    OsStr::new("pg_dumb.exe")
+                    OsStr::new("pg_dump.exe")
                 }
                 #[cfg(not(target_os = "windows"))]
                 {
-                    OsStr::new("pg_dumb")
+                    OsStr::new("pg_dump")
                 }
             }
         };
@@ -200,19 +196,78 @@ impl Global {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub enum RepositoryData {
-    /// Restic rest-server backend
-    Rest {
-        /// Repostiroy URL of the rest server.
-        /// Does not contain the repo or user/password.
-        rest_url: String,
-        /// Pubkey for the server when HTTPS is used.
-        server_pubkey_file: Option<PathBuf>,
-    },
+#[derive(Debug, Deserialize, Default, Serialize)]
+/// Defaults for rest backend
+pub struct RestRepository {
+    /// Repostiroy host of the rest server. For example 10.0.0.1:443
+    /// Does not contain the repo or user/password.
+    pub rest_host: Option<String>,
+    /// Pubkey for the server when HTTPS is used.
+    pub server_pubkey_file: Option<PathBuf>,
+    pub rest_user: Option<String>,
+    pub rest_password: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+macro_rules! impl_required_getters {
+    ( $target:ident, $name:ident ) => {
+        impl $target {
+            pub fn $name<'a>(&'a self, defaults: &'a Option<$target>) -> ComRes<&'a str> {
+                self.$name
+                    .as_deref()
+                    .or(defaults.as_ref().map(|v| v.$name.as_deref()).flatten())
+                    .ok_or(CommandError::MissingConfigValue("$name"))
+            }
+        }
+    };
+}
+macro_rules! impl_optional_getters {
+    ( $target:ident, $name:ident, $ret_type:ty ) => {
+        impl $target {
+            pub fn $name<'a>(&'a self, defaults: &'a Option<$target>) -> Option<&'a $ret_type> {
+                self.$name
+                    .as_deref()
+                    .or(defaults.as_ref().map(|v| v.$name.as_deref()).flatten())
+            }
+        }
+    };
+}
+
+impl_required_getters!(RestRepository, rest_user);
+impl_required_getters!(RestRepository, rest_password);
+impl_required_getters!(RestRepository, rest_host);
+impl_optional_getters!(RestRepository, server_pubkey_file, Path);
+
+#[derive(Debug, Deserialize, Default, Serialize)]
+/// Defaults for S3 backend
+pub struct S3Repository {
+    /// Host URL of the rest server.
+    /// Does not contain the bucket or user/password.
+    pub s3_host: Option<String>,
+    pub aws_access_key_id: Option<String>,
+    pub aws_secret_access_key: Option<String>,
+}
+
+impl_required_getters!(S3Repository, s3_host);
+impl_required_getters!(S3Repository, aws_access_key_id);
+impl_required_getters!(S3Repository, aws_secret_access_key);
+
+#[derive(Debug, Deserialize, Default, Serialize)]
+/// Defaults for rest backend
+pub struct SftpRepository {
+    /// Host URL of the sftp server.
+    /// Does not contain the repo or user/password!
+    pub sftp_host: Option<String>,
+    /// Command for connecting.
+    /// For `-o sftp.command="ssh -p 22 u1234@u1234.example.com -s sftp"`
+    pub sftp_command: Option<String>,
+    pub sftp_user: Option<String>,
+}
+
+impl_required_getters!(SftpRepository, sftp_host);
+impl_optional_getters!(SftpRepository, sftp_command, str);
+impl_required_getters!(SftpRepository, sftp_user);
+
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct JobData {
     /// For referencing jobs in commands and output
     pub name: String,
@@ -222,12 +277,11 @@ pub struct JobData {
     pub paths: Vec<PathBuf>,
     /// Exclude items see [restic docs](https://restic.readthedocs.io/en/latest/040_backup.html#excluding-files)
     pub excludes: Vec<String>,
-    /// Repository/Bucket
+    /// Repository / Bucket
     pub repository: String,
-    /// Login user
-    pub user: String,
-    /// Password for user
-    pub password: String,
+    /// Job Backend data
+    #[serde(flatten)]
+    pub backend: JobBackend,
     /// Encryption key
     pub repository_key: String,
     /// Command to run post backup
@@ -243,17 +297,69 @@ pub struct JobData {
 }
 
 /// Pre/Post user supplied command
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct CommandData {
     pub command: String,
     pub args: Vec<String>,
     pub workdir: PathBuf,
 }
-#[derive(Debug, Deserialize)]
+/// Postgres backup data
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct PostgresData {
     #[serde(default)]
     pub change_user: bool,
     pub password: Option<String>,
     pub user: Option<String>,
     pub database: String,
+}
+
+/// Per job backend
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "job_type")]
+pub enum JobBackend {
+    #[serde(alias = "s3")]
+    S3(S3Repository),
+    #[serde(alias = "rest", alias = "REST")]
+    Rest(RestRepository),
+    #[serde(alias = "sftp", alias = "Sftp")]
+    SFTP(SftpRepository),
+}
+
+impl Default for JobBackend {
+    fn default() -> Self {
+        JobBackend::S3(Default::default())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn default_config() -> Conf {
+        let mut conf = Conf::default();
+        conf.global.s3 = Some(S3Repository::default());
+        conf.global.rest = Some(RestRepository::default());
+        conf.global.sftp = Some(SftpRepository::default());
+        conf.job.push(Default::default());
+        conf.job.push(Default::default());
+        conf
+    }
+
+    #[test]
+    fn test_default_config() {
+        let conf = default_config();
+        println!("{}", toml::to_string_pretty(&conf).unwrap());
+
+        let config = include_str!("../config.toml.example");
+        let _config: Conf = toml::from_str(config).unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    fn test_default_config_verify() {
+        let config = include_str!("../config.toml.example");
+        let config: Conf = toml::from_str(config).unwrap();
+        // requires working restic binary and pubkey file
+        config.split().unwrap();
+    }
 }

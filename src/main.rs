@@ -186,7 +186,7 @@ fn main() -> Result<()> {
                     v
                 })
                 .collect();
-            
+
             println!("Entering daemon mode");
             loop {
                 jobs.sort_unstable_by(|a, b| b.next_run().unwrap().cmp(&a.next_run().unwrap()));
@@ -197,7 +197,7 @@ fn main() -> Result<()> {
                     // job interval
                     if sleep_time.is_positive() {
                         if defaults.verbose {
-                            println!("Waiting for cooldown time of job [{}]",job.name());
+                            println!("Waiting for cooldown time of job [{}]", job.name());
                         }
                         std::thread::sleep(sleep_time.try_into().into_diagnostic()?);
                     }

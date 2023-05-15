@@ -1,6 +1,6 @@
 # Restic backup manager
 
-Perform multiple [restic](https://restic.net/) backup jobs for different repositories and users towards a restic-server.
+Perform multiple [restic](https://restic.net/) backup jobs for different repositories and users.
 
 ```text
 Usage: backuprs [OPTIONS] <COMMAND>
@@ -49,12 +49,17 @@ Options:
 
 ## Features
 
-- Multiple restic backups jobs with different configurations
-- **only** [Rest-Server](https://github.com/restic/rest-server) backends are currently supported
-- Timeframe where all backups are allowed to run
-- Interval for each backup job
-- Pre- and Post-Backup commands
-- Mysql and PostgreSQL backup support
+- Multiple restic backups jobs with different configurations.
+- Override any defaults per job.
+- Supported backends currentls are
+  - [Rest-Server](https://github.com/restic/rest-server) backends are currently supported
+  - S3
+  - SFTP with custom connection parameters.
+- Timeframe where all backups are allowed to run.
+- Interval for each backup job.
+- Automic repository initialization.
+- Pre- and Post-Backup commands.
+- Mysql and PostgreSQL backup support.
 
 ## Installation
 
@@ -151,7 +156,7 @@ user="mysqluser"
 password="secret"
 ```
 
-A global backup user can be greated via
+A global backup user can be created via
 ```sql
 CREATE USER 'backuprs'@'localhost' IDENTIFIED BY '<CHANGE ME>';
 GRANT SELECT, SHOW VIEW, LOCK TABLES, RELOAD, REPLICATION CLIENT ON *.* TO 'backuprs'@'localhost';
