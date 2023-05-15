@@ -486,7 +486,8 @@ impl Job {
                 if stderr.contains("Fatal: unable to open config file") {
                     if stderr.contains("<config/> does not exist") // rest
                      || stderr.contains("file does not exist") // sftp
-                     || stderr.contains("Stat: The specified key does not exist") // S3
+                     || stderr.contains("Stat: The specified key does not exist")
+                    // S3
                     {
                         if self.verbose() {
                             // still print on verbose
@@ -573,102 +574,69 @@ impl Job {
         }
         match &self.data.backend {
             config::JobBackend::Rest(rest_data) => {
-                let default = self
-                    .globals
-                    .rest
-                    .as_ref()
-                    .ok_or_else(|| CommandError::MissingBackendConfig("rest"))?;
-
                 let mut url: String = String::from("rest:");
-                let pubkey_has_override = rest_data
-                    .overrides
-                    .as_ref()
-                    .map(|v| v.server_pubkey_file.is_some())
-                    .unwrap_or(false);
-                if default.server_pubkey_file.is_some() || pubkey_has_override {
+                let key_file = rest_data.server_pubkey_file(&self.globals.rest);
+                if key_file.is_some() {
                     url.push_str("https://");
                 } else {
                     url.push_str("http://");
                 }
-                url.push_str(&rest_data.rest_user);
+                url.push_str(&rest_data.rest_user(&self.globals.rest)?);
                 url.push_str(":");
-                url.push_str(&rest_data.rest_password);
+                url.push_str(&rest_data.rest_password(&self.globals.rest)?);
                 url.push_str("@");
-                match &rest_data.overrides {
-                    Some(overrides) => url.push_str(&overrides.rest_host),
-                    None => url.push_str(&default.rest_host),
-                }
+                url.push_str(rest_data.rest_host(&self.globals.rest)?);
+                // match &rest_data.overrides {
+                //     Some(overrides) => url.push_str(&overrides.rest_host),
+                //     None => url.push_str(&default.rest_host),
+                // }
                 url.push_str("/");
                 url.push_str(&self.data.repository);
 
                 outp.env("RESTIC_PASSWORD", self.data.repository_key.as_str())
                     .env("RESTIC_REPOSITORY", url);
-                let key_file = rest_data
-                    .overrides
-                    .as_ref()
-                    .map(|v| &v.server_pubkey_file)
-                    .unwrap_or(&default.server_pubkey_file);
                 if let Some(key_file) = key_file {
                     outp.arg("--cacert").arg(key_file);
                 }
             }
             config::JobBackend::S3(s3_data) => {
-                let default = self
-                    .globals
-                    .s3
-                    .as_ref()
-                    .ok_or_else(|| CommandError::MissingBackendConfig("S3"))?;
-
                 let mut url: String = String::from("s3:");
-                match &s3_data.overrides {
-                    Some(overrides) => url.push_str(&overrides.s3_host),
-                    None => url.push_str(&default.s3_host),
-                }
+                url.push_str(&s3_data.s3_host(&self.globals.s3)?);
                 url.push_str("/");
                 url.push_str(&self.data.repository);
 
                 outp.env("RESTIC_REPOSITORY", url)
                     .env("RESTIC_PASSWORD", self.data.repository_key.as_str())
-                    .env("AWS_ACCESS_KEY_ID", &s3_data.aws_access_key_id)
-                    .env("AWS_SECRET_ACCESS_KEY", &s3_data.aws_secret_access_key);
+                    .env("AWS_ACCESS_KEY_ID", &s3_data.aws_access_key_id(&self.globals.s3)?)
+                    .env("AWS_SECRET_ACCESS_KEY", &s3_data.aws_secret_access_key(&self.globals.s3)?);
             }
             config::JobBackend::SFTP(sftp_data) => {
-                let default = self
-                    .globals
-                    .sftp
-                    .as_ref()
-                    .ok_or_else(|| CommandError::MissingBackendConfig("sftp"))?;
-
                 let mut url: String = String::from("sftp:");
-                url.push_str(&sftp_data.sftp_user);
+                let sftp_user = &sftp_data.sftp_user(&self.globals.sftp)?;
+                url.push_str(sftp_user);
                 url.push_str("@");
-                let host = sftp_data
-                    .overrides
-                    .as_ref()
-                    .map(|v| &v.sftp_host)
-                    .unwrap_or_else(|| &default.sftp_host);
+                let host: &str = sftp_data.sftp_host(&self.globals.sftp)?;
                 url.push_str(&host);
                 url.push_str(":/");
                 url.push_str(&self.data.repository);
 
                 if self.verbose() {
-                    println!("[{}] Repo URL: '{url}'",self.name());
+                    println!("[{}] Repo URL: '{url}'", self.name());
                 }
 
-                let connect_command = sftp_data
-                    .overrides
-                    .as_ref()
-                    .map(|v| &v.sftp_command)
-                    .unwrap_or(&default.sftp_command);
+                let connect_command = sftp_data.sftp_command(&self.globals.sftp);
                 if let Some(command) = connect_command {
                     // -o sftp.command="foobar"
                     let connection_option = format!("sftp.command={command}")
-                        .replace("{user}", &sftp_data.sftp_user)
+                        .replace("{user}", sftp_user)
                         .replace("{host}", host);
                     if self.verbose() {
-                        println!("[{}] Option sftp.command: '{connection_option}'",self.name());
+                        println!(
+                            "[{}] Option sftp.command: '{connection_option}'",
+                            self.name()
+                        );
                     }
-                    outp.args(["-o",&connection_option]);
+                    outp.args(["-o", &connection_option]);
                 }
 
                 outp.env("RESTIC_REPOSITORY", url)

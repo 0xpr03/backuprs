@@ -1,17 +1,18 @@
 use std::cell::Cell;
 use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
 
+use crate::error::{ComRes, CommandError};
+use crate::job::Job;
+use crate::job::JobMap;
 use miette::{bail, Result};
 use miette::{Context, IntoDiagnostic};
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::{de, Serialize};
 use time::format_description;
-use crate::job::Job;
-use crate::job::JobMap;
 
 #[derive(Debug, Deserialize, Default, Serialize)]
 pub struct Conf {
@@ -44,10 +45,10 @@ pub type Defaults = Rc<Global>;
 pub struct Global {
     // Repository backends and defaults
     /// Rest backend defaults
-    #[serde(alias = "REST", alias="Rest")]
+    #[serde(alias = "REST", alias = "Rest")]
     pub rest: Option<RestRepository>,
     /// SFTP backend defaults
-    #[serde(alias = "Sftp", alias="SFTP")]
+    #[serde(alias = "Sftp", alias = "SFTP")]
     pub sftp: Option<SftpRepository>,
     /// S3 backend defaults
     #[serde(alias = "S3")]
@@ -136,6 +137,8 @@ impl Global {
         if let Some(RestRepository {
             rest_host: _,
             server_pubkey_file,
+            rest_user: _,
+            rest_password: _,
         }) = &self.rest
         {
             if let Some(pubkey_file) = server_pubkey_file {
@@ -208,29 +211,72 @@ impl Global {
 pub struct RestRepository {
     /// Repostiroy host of the rest server. For example 10.0.0.1:443
     /// Does not contain the repo or user/password.
-    pub rest_host: String,
+    pub rest_host: Option<String>,
     /// Pubkey for the server when HTTPS is used.
     pub server_pubkey_file: Option<PathBuf>,
+    pub rest_user: Option<String>,
+    pub rest_password: Option<String>,
 }
+
+macro_rules! impl_required_getters {
+    ( $target:ident, $name:ident ) => (
+        impl $target {
+            pub fn $name<'a>(&'a self, defaults: &'a Option<$target>) -> ComRes<&'a str> {
+                self.$name
+                    .as_deref()
+                    .or(defaults.as_ref().map(|v|v.$name.as_deref()).flatten())
+                    .ok_or(CommandError::MissingConfigValue("$name"))
+            }
+        }
+    );
+}
+macro_rules! impl_optional_getters {
+    ( $target:ident, $name:ident, $ret_type:ty ) => (
+        impl $target {
+            pub fn $name<'a>(&'a self, defaults: &'a Option<$target>) -> Option<&'a $ret_type> {
+                self.$name
+                .as_deref()
+                .or(defaults.as_ref().map(|v|v.$name.as_deref()).flatten())
+            }
+        }
+    );
+}
+
+
+impl_required_getters!(RestRepository, rest_user);
+impl_required_getters!(RestRepository, rest_password);
+impl_required_getters!(RestRepository, rest_host);
+impl_optional_getters!(RestRepository, server_pubkey_file, Path);
 
 #[derive(Debug, Deserialize, Default, Serialize)]
 /// Defaults for S3 backend
 pub struct S3Repository {
     /// Host URL of the rest server.
     /// Does not contain the bucket or user/password.
-    pub s3_host: String,
+    pub s3_host: Option<String>,
+    pub aws_access_key_id: Option<String>,
+    pub aws_secret_access_key: Option<String>,
 }
+
+impl_required_getters!(S3Repository, s3_host);
+impl_required_getters!(S3Repository, aws_access_key_id);
+impl_required_getters!(S3Repository, aws_secret_access_key);
 
 #[derive(Debug, Deserialize, Default, Serialize)]
 /// Defaults for rest backend
 pub struct SftpRepository {
     /// Host URL of the sftp server.
     /// Does not contain the repo or user/password!
-    pub sftp_host: String,
+    pub sftp_host: Option<String>,
     /// Command for connecting.
     /// For `-o sftp.command="ssh -p 22 u1234@u1234.example.com -s sftp"`
     pub sftp_command: Option<String>,
+    pub sftp_user: Option<String>,
 }
+
+impl_required_getters!(SftpRepository, sftp_host);
+impl_optional_getters!(SftpRepository, sftp_command, str);
+impl_required_getters!(SftpRepository, sftp_user);
 
 #[derive(Debug, Deserialize, Default, Serialize)]
 pub struct JobData {
@@ -283,43 +329,17 @@ pub struct PostgresData {
 #[serde(tag = "job_type")]
 pub enum JobBackend {
     #[serde(alias = "s3")]
-    S3(S3JobData),
+    S3(S3Repository),
     #[serde(alias = "rest", alias = "REST")]
-    Rest(RestJobData),
+    Rest(RestRepository),
     #[serde(alias = "sftp", alias = "Sftp")]
-    SFTP(SftpJobData),
+    SFTP(SftpRepository),
 }
 
 impl Default for JobBackend {
     fn default() -> Self {
         JobBackend::S3(Default::default())
     }
-}
-
-/// Per job s3-backend data
-#[derive(Debug, Deserialize, Default, Serialize)]
-pub struct S3JobData {
-    pub aws_access_key_id: String,
-    pub aws_secret_access_key: String,
-    #[serde(flatten)]
-    pub overrides: Option<S3Repository>,
-}
-
-/// Per job rest-backend data
-#[derive(Debug, Deserialize, Default, Serialize)]
-pub struct RestJobData {
-    pub rest_user: String,
-    pub rest_password: String,
-    #[serde(flatten)]
-    pub overrides: Option<RestRepository>,
-}
-
-/// Per job sftp-backend data
-#[derive(Debug, Deserialize, Default, Serialize)]
-pub struct SftpJobData {
-    pub sftp_user: String,
-    #[serde(flatten)]
-    pub overrides: Option<SftpRepository>,
 }
 
 #[cfg(test)]
