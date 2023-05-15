@@ -58,7 +58,16 @@ impl Job {
                 rest.rest_host(&self.globals.rest)?;
                 rest.rest_password(&self.globals.rest)?;
                 rest.rest_user(&self.globals.rest)?;
-                if let Some(pubkey_file) = rest.server_pubkey_file(&self.globals.rest) {
+                let pubkey_file = rest.server_pubkey_file(&self.globals.rest);
+                if self.verbose() {
+                    match pubkey_file.is_some() {
+                        true => println!("[{}] Server pubkey file found, using https", self.name()),
+                        false => {
+                            println!("[{}] No server pubkey file found, using http", self.name())
+                        }
+                    }
+                }
+                if let Some(pubkey_file) = pubkey_file {
                     if !pubkey_file.exists() {
                         bail!("Rest 'server_pubkey_file' specified, but file does not exist?");
                     }
@@ -72,6 +81,10 @@ impl Job {
             config::JobBackend::SFTP(sftp) => {
                 sftp.sftp_host(&self.globals.sftp)?;
                 sftp.sftp_user(&self.globals.sftp)?;
+                match sftp.sftp_command(&self.globals.sftp).is_some() {
+                    true => println!("[{}] Sftp connect command specified.", self.name()),
+                    false => println!("[{}] No sftp connect command specified.", self.name()),
+                }
             }
         }
         Ok(())
