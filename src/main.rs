@@ -220,6 +220,10 @@ fn main() -> Result<()> {
                             return Err(e);
                         }
                     }
+                    // refresh last update time before adding the job back to the list
+                    if let Err(e) = job.update_last_run() {
+                        eprintln!("[{}]\t Failed to refresh last update run! {}",job.name(),e);
+                    }
 
                     jobs.push(job);
                 }
