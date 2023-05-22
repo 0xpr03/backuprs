@@ -205,7 +205,7 @@ impl Job {
             let msg: BackupMessage = serde_json::from_str(line).into_diagnostic()?;
             match msg {
                 BackupMessage::VerboseStatus(v) => {
-                    if dry_run || verbose > 2 {
+                    if dry_run || verbose > 1 {
                         match v.action.as_str() {
                             "unchanged" => println!("[{}]\tUnchanged \"{}\"", name, v.item),
                             "new" => {
