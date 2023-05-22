@@ -55,9 +55,10 @@ pub struct Global {
     pub s3: Option<S3Repository>,
     /// Path to restic binary
     pub restic_binary: PathBuf,
-    /// Verbose output, passed via CLI params
+    /// Verbose output, passed via CLI params.  
+    /// Value [0-3] for disabled to maximum level.
     #[serde(default)]
-    pub verbose: bool,
+    pub verbose: usize,
     /// Default interval to use for backup jobs
     pub default_interval: u64,
     /// Period of time to perform backup jobs
@@ -72,8 +73,12 @@ pub struct Global {
     pub verified_mysql_binary: Cell<bool>,
     #[serde(default)]
     pub verified_postgres_binary: Cell<bool>,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub progress: bool,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -19,8 +19,8 @@ mod job;
 #[command(author, version, about, long_about = None)]
 struct Cli {
     /// Verbose output
-    #[arg(short, long, default_value_t = false)]
-    verbose: bool,
+    #[arg(short, long, default_value_t = 0)]
+    verbose: usize,
     /// Disable progress output for backups.
     #[arg(short, long, default_value_t = false)]
     no_progress: bool,
@@ -66,8 +66,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let mut config = read_config().wrap_err("Reading configuration")?;
-    if cli.verbose {
-        config.global.verbose = true;
+    if cli.verbose > 0 {
+        config.global.verbose = cli.verbose;
     }
     if cli.no_progress {
         config.global.progress = false;
@@ -196,7 +196,7 @@ fn main() -> Result<()> {
                     let sleep_time = job.next_run()? - now;
                     // job interval
                     if sleep_time.is_positive() {
-                        if defaults.verbose {
+                        if defaults.verbose > 0 {
                             println!("Waiting for cooldown time of job [{}]", job.name());
                         }
                         std::thread::sleep(sleep_time.try_into().into_diagnostic()?);
@@ -207,7 +207,7 @@ fn main() -> Result<()> {
                         if let Some(duration) =
                             calc_period_sleep(period.backup_start_time, period.backup_end_time, now)
                         {
-                            if defaults.verbose {
+                            if defaults.verbose > 0 {
                                 println!("Waiting for backup start time");
                             }
                             std::thread::sleep(duration.try_into().into_diagnostic()?);

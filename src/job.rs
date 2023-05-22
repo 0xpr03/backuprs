@@ -16,6 +16,7 @@ use std::process::ExitStatus;
 use std::process::Output;
 use std::process::Stdio;
 use std::rc::Rc;
+use std::time::Instant;
 use time::{Duration, OffsetDateTime};
 
 use crate::config::{self, JobData};
@@ -156,7 +157,7 @@ impl Job {
         res
     }
 
-    /// Perform dry run with verbose information
+    /// If dry_run run is set, performs it with verbose information
     fn _inner_backup(&self, context: &mut BackupContext, dry_run: bool) -> Result<BackupSummary> {
         self.assert_initialized()?;
 
@@ -191,20 +192,20 @@ impl Job {
         let bufreader = BufReader::new(stdout);
 
         // cache, no Rc overhead
-        let verbose = self.verbose();
+        let verbose = self.globals.verbose;
         let stats = self.globals.progress;
         let name = self.name();
 
         let mut backup_summary: Option<BackupSummary> = None;
         let mut last_progress = 0;
-
+        let mut last_update = Instant::now();
         for line in bufreader.lines().filter_map(|l| l.ok()) {
             let line = line.trim();
             self.check_error_stdout(line)?;
             let msg: BackupMessage = serde_json::from_str(line).into_diagnostic()?;
             match msg {
                 BackupMessage::VerboseStatus(v) => {
-                    if dry_run || verbose {
+                    if dry_run || verbose > 2 {
                         match v.action.as_str() {
                             "unchanged" => println!("[{}]\tUnchanged \"{}\"", name, v.item),
                             "new" => {
@@ -224,15 +225,18 @@ impl Job {
                         match status {
                             BackupStatus::Finish(_) => (),
                             BackupStatus::Intermediate(s) => {
-                                let percent: i32 = (s.percent_done * 100.0) as _;
-                                if percent != last_progress {
-                                    last_progress = percent;
-                                    println!(
-                                        "[{}]\tBackup {}% finished, {} files finished",
-                                        self.name(),
-                                        percent,
-                                        s.files_done
-                                    );
+                                if last_update.elapsed() > Duration::seconds(1) {
+                                    let percent: i32 = (s.percent_done * 100.0) as _;
+                                    if percent != last_progress {
+                                        last_progress = percent;
+                                        println!(
+                                            "[{}]\tBackup {}% finished, {} files finished",
+                                            self.name(),
+                                            percent,
+                                            s.files_done
+                                        );
+                                        last_update = Instant::now();
+                                    }
                                 }
                             }
                         }
@@ -260,7 +264,7 @@ impl Job {
     fn assert_initialized(&self) -> Result<()> {
         if self.last_run.get().is_none() {
             if self.update_last_run() == Err(CommandError::NotInitialized) {
-                if self.globals.verbose {
+                if self.globals.verbose > 0 {
                     println!("[{}] not initialized", self.name());
                 }
                 self.restic_init()?;
@@ -427,7 +431,7 @@ impl Job {
 
     #[inline]
     fn verbose(&self) -> bool {
-        self.globals.verbose
+        self.globals.verbose > 0
     }
 
     /// Initialize restic repository
@@ -477,7 +481,7 @@ impl Job {
             if line.contains("Fatal: unable to open config file")
                 && line.contains("<config/> does not exist")
             {
-                if self.verbose() {
+                if self.globals.verbose > 2 {
                     // still print on verbose
                     self.print_line_verbose_restic(line, false);
                 }
@@ -486,7 +490,7 @@ impl Job {
             self.print_line_verbose_restic(line, false);
             return Err(CommandError::ResticError(String::new()));
         }
-        if self.verbose() {
+        if self.globals.verbose > 2 {
             self.print_line_verbose_restic(line, false);
         }
         Ok(())
