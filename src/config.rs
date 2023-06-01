@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::ffi::OsStr;
+use std::fs::{remove_dir, remove_dir_all, DirBuilder};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
@@ -124,6 +125,32 @@ impl Global {
         if !self.scratch_dir.is_dir() {
             bail!("Path for config value 'scratch_dir' is not an existing folder!");
         }
+        // test we can write to scratch_dir
+        let scratch_test_dir = self.scratch_dir.join("testing");
+        if scratch_test_dir.exists() {
+            eprintln!(
+                "Path for testing scratch dir write perms exists!\nPath {:?}",
+                scratch_test_dir
+            );
+        } else {
+            let mut builder = DirBuilder::new();
+            builder.recursive(true);
+            if let Err(e) = builder.create(&scratch_test_dir) {
+                bail!(
+                    "Failed to create scratch_dir test folder recursively at {:?}: {:?}",
+                    scratch_test_dir,
+                    e
+                );
+            }
+            if let Err(e) = remove_dir(&scratch_test_dir) {
+                bail!(
+                    "Failed to delete scatch_dir test folder again at {:?}: {:?}",
+                    scratch_test_dir,
+                    e
+                );
+            }
+        }
+
         if let Some(period) = &self.period {
             if period.backup_start_time == period.backup_end_time {
                 bail!("Backup period start and end time can't be the same!");
