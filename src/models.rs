@@ -99,7 +99,6 @@ impl Display for BackupSummary {
     }
 }
 
-
 pub const fn format_size(bytes: usize) -> (&'static str, usize) {
     if bytes > 2 << 40 {
         ("TiB", bytes / (2 << 40))

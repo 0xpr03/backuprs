@@ -401,7 +401,10 @@ impl Job {
 
     fn run_post_jobs(&self, context: &mut BackupContext) -> Result<()> {
         if let Some(command_data) = &self.data.post_command {
-            let post_command_on_failure = self.data.post_command_on_failure.ok_or_else(||miette!("Expected option 'post_command_on_failure'!"))?;
+            let post_command_on_failure = self
+                .data
+                .post_command_on_failure
+                .ok_or_else(|| miette!("Expected option 'post_command_on_failure'!"))?;
             if post_command_on_failure || context.success {
                 self.run_user_command(context, command_data, "post-command", context.success)?;
             }
