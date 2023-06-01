@@ -14,6 +14,7 @@ use crate::error::CommandError;
 mod config;
 mod error;
 mod job;
+mod models;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

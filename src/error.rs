@@ -19,10 +19,6 @@ pub enum CommandError {
     #[diagnostic(code(restic::invalid_json))]
     InvalidResponse(#[from] serde_json::error::Error),
 
-    #[error("Missing {0} configuration for job.")]
-    #[diagnostic(code(restic::invalid_config))]
-    MissingBackendConfig(&'static str),
-
     #[error("Missing required value for {0}, not specific in the defaults or job specific configuration.")]
     #[diagnostic(code(restic::invalid_config))]
     MissingConfigValue(&'static str),
