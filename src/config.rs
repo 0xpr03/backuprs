@@ -292,7 +292,8 @@ pub struct JobData {
     /// Command to run post backup
     pub post_command: Option<CommandData>,
     /// Whether to run the post_command even on backup failure
-    pub post_command_on_failure: bool,
+    #[serde(default)]
+    pub post_command_on_failure: Option<bool>,
     /// Interval in which to perform the backup
     pub interval: Option<u64>,
     /// MySQL database name to backup

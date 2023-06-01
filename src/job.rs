@@ -48,6 +48,9 @@ impl Job {
     }
 
     fn verify(&self) -> Result<()> {
+        if self.data.post_command.is_some() && self.data.post_command_on_failure.is_none() {
+            bail!("Option 'post_command' is specified, but not 'post_command_on_failure'!");
+        }
         match &self.data.backend {
             config::JobBackend::S3(s3) => {
                 s3.aws_access_key_id(&self.globals.s3)?;
@@ -398,7 +401,8 @@ impl Job {
 
     fn run_post_jobs(&self, context: &mut BackupContext) -> Result<()> {
         if let Some(command_data) = &self.data.post_command {
-            if self.data.post_command_on_failure || context.success {
+            let post_command_on_failure = self.data.post_command_on_failure.ok_or_else(||miette!("Expected option 'post_command_on_failure'!"))?;
+            if post_command_on_failure || context.success {
                 self.run_user_command(context, command_data, "post-command", context.success)?;
             }
         }
