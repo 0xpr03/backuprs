@@ -409,7 +409,7 @@ impl Job {
     pub fn backup(&mut self) -> Result<BackupSummary> {
         println!("[{}]\tStarting backup", self.name());
         let summary = self.inner_backup(false)?;
-        print!("[{}]\tBackup finished. {}", self.name(), summary);
+        println!("[{}]\tBackup finished. {}", self.name(), summary);
         if self.verbose() {
             println!("[{}]\tBackup Details: {:?}", self.name(), summary);
         }
