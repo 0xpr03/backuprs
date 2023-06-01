@@ -1,6 +1,7 @@
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fs::{remove_dir, remove_dir_all, DirBuilder};
+use std::fs::{remove_dir, DirBuilder};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
@@ -26,17 +27,19 @@ impl Conf {
     pub fn split(self) -> Result<(Defaults, JobMap)> {
         self.global.check()?;
         let defaults = Rc::new(self.global);
-        let jobs: Result<JobMap> = self
-            .job
-            .into_iter()
-            .map(|v| {
-                let name = v.name.clone();
-                let job = Job::new(v, defaults.clone())?;
-                Ok((name, job))
-            })
-            .collect();
+        let mut jobs = HashMap::with_capacity(self.job.len());
+        for job_data in self.job.into_iter() {
+            let name = job_data.name.clone();
+            let job = Job::new(job_data, defaults.clone())?;
+            if let Some(old_job) = jobs.insert(name, job) {
+                bail!(
+                    "Multiple jobs with the same name '{}' detected!",
+                    old_job.name()
+                );
+            }
+        }
 
-        Ok((defaults, jobs?))
+        Ok((defaults, jobs))
     }
 }
 

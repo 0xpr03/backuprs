@@ -79,6 +79,10 @@ fn main() -> Result<()> {
     // TODO: fail on duplicate job names
     let (defaults, mut jobs) = config.split()?;
 
+    if defaults.verbose > 1 {
+        println!("Loaded {} jobs.", jobs.len());
+    }
+
     match &cli.command {
         Commands::Run {
             job,
